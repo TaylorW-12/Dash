@@ -1,0 +1,34 @@
+import dash
+from dash import html, dcc
+
+app = dash.Dash(__name__)
+
+app.layout = html.Div([
+    # Sidebar
+    html.Div([
+        html.Img(src="https://www.svgrepo.com/show/506800/menu.svg", className="sidebar-icon active"),
+        html.Img(src="https://www.svgrepo.com/show/511338/dashboard.svg", className="sidebar-icon"),
+        html.Img(src="https://www.svgrepo.com/show/511234/file.svg", className="sidebar-icon"),
+        html.Img(src="https://www.svgrepo.com/show/511158/settings.svg", className="sidebar-icon"),
+    ], className="sidebar"),
+
+    # Main content area
+    html.Div([
+        html.H1("Vulnerability Overview"),
+        dcc.Graph(
+            figure={
+                'data': [
+                    {'x': ['Mon', 'Tue', 'Wed'], 'y': [4, 1, 2], 'type': 'bar', 'name': 'Example'},
+                ],
+                'layout': {
+                    'plot_bgcolor': '#000000',
+                    'paper_bgcolor': '#000000',
+                    'font': {'color': 'white'},
+                }
+            }
+        )
+    ], className="main-content")
+])
+
+if __name__ == '__main__':
+    app.run_server(debug=True)
