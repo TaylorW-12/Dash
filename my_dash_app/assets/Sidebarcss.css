@@ -1,0 +1,41 @@
+/* Sidebar container */
+.sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 80px;
+    height: 100%;
+    background-color: #111111;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding-top: 20px;
+    z-index: 999;
+}
+
+/* Sidebar icons */
+.sidebar-icon {
+    width: 30px;
+    height: 30px;
+    margin: 20px 0;
+    opacity: 0.6;
+    cursor: pointer;
+}
+
+.sidebar-icon:hover {
+    opacity: 1;
+}
+
+/* Active tab */
+.sidebar-icon.active {
+    border-left: 3px solid #9b5de5;
+    opacity: 1;
+}
+
+/* Main content pushes right */
+.main-content {
+    margin-left: 80px;
+    padding: 20px;
+    background-color: #f9f9f9;
+    min-height: 100vh;
+}
