@@ -1,0 +1,633 @@
+import dash
+from dash import dcc, html, Input, Output
+import plotly.graph_objs as go
+import plotly.express as px
+import pandas as pd
+import numpy as np
+
+# Initialize the Dash app
+app = dash.Dash(__name__, suppress_callback_exceptions=True)
+
+# Define colors
+colors = {
+    'background': '#121212',
+    'card_bg': '#1E1E1E',
+    'text': '#FFFFFF',
+    'purple': '#8A74DE',
+    'green': '#4CAF50',
+    'orange': '#FF6B35',
+    'teal': '#39A59C',
+    'red': '#F44336',
+    'light_bg': '#2A2A2A'
+}
+
+# Sample data
+entry_points = {
+    'domains': {'count': 104, 'vulnerable': 0},
+    'subdomains': {'count': 167, 'vulnerable': 63},
+    'ip_addresses': {'count': 0, 'vulnerable': 40},
+    'containers': {'count': 236, 'vulnerable': 162}
+}
+
+main_assets = {
+    'discovered': 329,
+    'pending': 245,
+    'active': 131,
+    'found': 73,
+    'domains': 48,
+    'ip_addresses': 24,
+    'subdomains': 5,
+    'ip_ranges': 40
+}
+
+reporting = {
+    'processed': 62,
+    'escalated': 53,
+    'sent_to_consultants': 16,
+    'pending': 9
+}
+
+issues = {
+    'total': 535,
+    'low': 20,
+    'medium': 50,
+    'critical': 12,
+    'severe': 18
+}
+
+trials = {
+    'DOM_clobbering': 7,
+    'XMl_entities': 12,
+    'SSRF': 8,
+    'SQL_injections': 4
+}
+
+# Sample data for bar chart
+bar_data = pd.DataFrame({
+    'day': ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'],
+    'value1': [15, 5, 25, 18, 12, 5, 16],
+    'value2': [0, 8, 0, 12, 0, 7, 0]
+})
+
+# App layout
+app.layout = html.Div(style={'backgroundColor': colors['background'], 'color': colors['text'], 'minHeight': '100vh', 'fontFamily': 'Arial, sans-serif'}, children=[
+    html.Div(style={'display': 'flex', 'minHeight': '100vh'}, children=[
+        # Sidebar
+        html.Div(style={
+            'width': '60px', 
+            'backgroundColor': '#FFFFFF', 
+            'padding': '20px 0', 
+            'display': 'flex', 
+            'flexDirection': 'column', 
+            'alignItems': 'center', 
+            'boxShadow': '2px 0 5px rgba(0,0,0,0.1)'
+        }, children=[
+            html.Div(style={'marginBottom': '25px'}, children=[
+                html.Img(src='/assets/logo.png', style={'width': '24px', 'height': '24px'})
+            ]),
+            html.Div(style={'display': 'flex', 'flexDirection': 'column', 'alignItems': 'center', 'gap': '25px', 'flex': '1'}, children=[
+                html.Div(style={'padding': '8px', 'borderLeft': '3px solid #8A74DE', 'backgroundColor': '#F0F0F0', 'borderRadius': '0 4px 4px 0'}, children=[
+                    html.I(className="fa fa-home", style={'color': '#8A74DE'})
+                ]),
+                html.Div(style={'padding': '8px'}, children=[
+                    html.I(className="fa fa-chart-line", style={'color': '#666'})
+                ]),
+                html.Div(style={'padding': '8px'}, children=[
+                    html.I(className="fa fa-search", style={'color': '#666'})
+                ]),
+                html.Div(style={'padding': '8px'}, children=[
+                    html.I(className="fa fa-cog", style={'color': '#666'})
+                ]),
+                html.Div(style={'padding': '8px'}, children=[
+                    html.I(className="fa fa-file", style={'color': '#666'})
+                ]),
+                html.Div(style={'padding': '8px'}, children=[
+                    html.I(className="fa fa-unlock", style={'color': '#666'})
+                ])
+            ]),
+            html.Div(style={'marginTop': 'auto', 'padding': '15px 0'}, children=[
+                html.Div(style={'backgroundColor': '#F0F0F0', 'width': '32px', 'height': '32px', 'borderRadius': '50%', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center'}, children=[
+                    html.I(className="fa fa-user", style={'color': '#666'})
+                ])
+            ])
+        ]),
+        
+        # Main content
+        html.Div(style={'flex': '1', 'padding': '25px 30px'}, children=[
+            # Header
+            html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'marginBottom': '20px', 'alignItems': 'center'}, children=[
+                html.H1("Vulnerability overview", style={'margin': '0', 'fontSize': '24px', 'fontWeight': 'bold'}),
+                html.Div(style={'display': 'flex', 'gap': '10px'}, children=[
+                    html.Button("last week", style={'backgroundColor': colors['light_bg'], 'color': colors['text'], 'border': 'none', 'padding': '8px 15px', 'borderRadius': '4px'}),
+                    html.Button("last month", style={'backgroundColor': colors['light_bg'], 'color': colors['text'], 'border': 'none', 'padding': '8px 15px', 'borderRadius': '4px'}),
+                    html.Button("last year", style={'backgroundColor': colors['light_bg'], 'color': colors['text'], 'border': 'none', 'padding': '8px 15px', 'borderRadius': '4px'}),
+                    html.Button(children=[html.I(className="fa fa-calendar", style={'marginRight': '5px'}), "select date"], style={'backgroundColor': colors['light_bg'], 'color': colors['text'], 'border': 'none', 'padding': '8px 15px', 'borderRadius': '4px', 'display': 'flex', 'alignItems': 'center'})
+                ])
+            ]),
+            
+            # Top section - Entry points and main assets
+            html.Div(style={'display': 'flex', 'gap': '20px', 'marginBottom': '20px'}, children=[
+                # Left panel - Entry point breakdown
+                html.Div(style={'flex': '1', 'backgroundColor': colors['card_bg'], 'borderRadius': '8px', 'padding': '20px'}, children=[
+                    html.H3("entry point breakdown", style={'margin': '0 0 20px 0', 'fontSize': '16px', 'fontWeight': 'normal'}),
+                    html.Div(style={'display': 'flex', 'flexDirection': 'column', 'gap': '15px'}, children=[
+                        # Domains
+                        html.Div(style={'display': 'flex', 'alignItems': 'center', 'gap': '10px'}, children=[
+                            html.Div("domains:", style={'width': '100px', 'fontSize': '14px'}),
+                            html.Div(f"{entry_points['domains']['vulnerable']}", style={'width': '30px', 'textAlign': 'right', 'fontSize': '14px'}),
+                            dcc.Graph(
+                                figure={
+                                    'data': [
+                                        go.Bar(
+                                            x=[entry_points['domains']['vulnerable']],
+                                            y=[''],
+                                            orientation='h',
+                                            width=0.4,
+                                            marker=dict(color=colors['orange']),
+                                            hoverinfo='none',
+                                            showlegend=False
+                                        ),
+                                        go.Bar(
+                                            x=[entry_points['domains']['count']],
+                                            y=[''],
+                                            orientation='h',
+                                            width=0.4,
+                                            marker=dict(color=colors['purple']),
+                                            hoverinfo='none',
+                                            showlegend=False
+                                        )
+                                    ],
+                                    'layout': go.Layout(
+                                        xaxis=dict(showticklabels=False, showgrid=False, zeroline=False),
+                                        yaxis=dict(showticklabels=False, showgrid=False, zeroline=False),
+                                        margin=dict(l=0, r=0, t=0, b=0),
+                                        height=20,
+                                        width=None,
+                                        barmode='overlay',
+                                        paper_bgcolor='rgba(0,0,0,0)',
+                                        plot_bgcolor='rgba(0,0,0,0)',
+                                        showlegend=False
+                                    )
+                                },
+                                config={'displayModeBar': False},
+                                style={'height': '20px', 'flex': '1'}
+                            ),
+                            html.Div(f"{entry_points['domains']['count']}", style={'width': '30px', 'textAlign': 'right', 'fontSize': '14px'})
+                        ]),
+                        
+                        # Subdomains
+                        html.Div(style={'display': 'flex', 'alignItems': 'center', 'gap': '10px'}, children=[
+                            html.Div("subdomains:", style={'width': '100px', 'fontSize': '14px'}),
+                            html.Div(f"{entry_points['subdomains']['vulnerable']}", style={'width': '30px', 'textAlign': 'right', 'fontSize': '14px'}),
+                            dcc.Graph(
+                                figure={
+                                    'data': [
+                                        go.Bar(
+                                            x=[entry_points['subdomains']['vulnerable']],
+                                            y=[''],
+                                            orientation='h',
+                                            width=0.4,
+                                            marker=dict(color=colors['orange']),
+                                            hoverinfo='none'
+                                        ),
+                                        go.Bar(
+                                            x=[entry_points['subdomains']['count']],
+                                            y=[''],
+                                            orientation='h',
+                                            width=0.4,
+                                            marker=dict(color=colors['purple']),
+                                            hoverinfo='none'
+                                        )
+                                    ],
+                                    'layout': go.Layout(
+                                        xaxis=dict(showticklabels=False, showgrid=False, zeroline=False),
+                                        yaxis=dict(showticklabels=False, showgrid=False, zeroline=False),
+                                        margin=dict(l=0, r=0, t=0, b=0),
+                                        height=20,
+                                        width=None,
+                                        barmode='overlay',
+                                        paper_bgcolor='rgba(0,0,0,0)',
+                                        plot_bgcolor='rgba(0,0,0,0)',
+                                        showlegend=False
+                                    )
+                                },
+                                config={'displayModeBar': False},
+                                style={'height': '20px', 'flex': '1'}
+                            ),
+                            html.Div(f"{entry_points['subdomains']['count']}", style={'width': '30px', 'textAlign': 'right', 'fontSize': '14px'})
+                        ]),
+                        
+                        # IP addresses
+                        html.Div(style={'display': 'flex', 'alignItems': 'center', 'gap': '10px'}, children=[
+                            html.Div("IP addresses:", style={'width': '100px', 'fontSize': '14px'}),
+                            html.Div(f"{entry_points['ip_addresses']['vulnerable']}", style={'width': '30px', 'textAlign': 'right', 'fontSize': '14px'}),
+                            dcc.Graph(
+                                figure={
+                                    'data': [
+                                        go.Bar(
+                                            x=[entry_points['ip_addresses']['vulnerable']],
+                                            y=[''],
+                                            orientation='h',
+                                            width=0.4,
+                                            marker=dict(color=colors['teal']),
+                                            hoverinfo='none'
+                                        ),
+                                        go.Bar(
+                                            x=[entry_points['ip_addresses']['count']],
+                                            y=[''],
+                                            orientation='h',
+                                            width=0.4,
+                                            marker=dict(color=colors['purple']),
+                                            hoverinfo='none'
+                                        )
+                                    ],
+                                    'layout': go.Layout(
+                                        xaxis=dict(showticklabels=False, showgrid=False, zeroline=False),
+                                        yaxis=dict(showticklabels=False, showgrid=False, zeroline=False),
+                                        margin=dict(l=0, r=0, t=0, b=0),
+                                        height=20,
+                                        width=None,
+                                        barmode='overlay',
+                                        paper_bgcolor='rgba(0,0,0,0)',
+                                        plot_bgcolor='rgba(0,0,0,0)',
+                                        showlegend=False
+                                    )
+                                },
+                                config={'displayModeBar': False},
+                                style={'height': '20px', 'flex': '1'}
+                            ),
+                            html.Div(f"{entry_points['ip_addresses']['count']}", style={'width': '30px', 'textAlign': 'right', 'fontSize': '14px'})
+                        ]),
+                        
+                        # Containers
+                        html.Div(style={'display': 'flex', 'alignItems': 'center', 'gap': '10px'}, children=[
+                            html.Div("Containers:", style={'width': '100px', 'fontSize': '14px'}),
+                            html.Div(f"{entry_points['containers']['vulnerable']}", style={'width': '30px', 'textAlign': 'right', 'fontSize': '14px'}),
+                            dcc.Graph(
+                                figure={
+                                    'data': [
+                                        go.Bar(
+                                            x=[entry_points['containers']['vulnerable']],
+                                            y=[''],
+                                            orientation='h',
+                                            width=0.4,
+                                            marker=dict(color=colors['teal']),
+                                            hoverinfo='none'
+                                        ),
+                                        go.Bar(
+                                            x=[entry_points['containers']['count']],
+                                            y=[''],
+                                            orientation='h',
+                                            width=0.4,
+                                            marker=dict(color=colors['purple']),
+                                            hoverinfo='none'
+                                        )
+                                    ],
+                                    'layout': go.Layout(
+                                        xaxis=dict(showticklabels=False, showgrid=False, zeroline=False),
+                                        yaxis=dict(showticklabels=False, showgrid=False, zeroline=False),
+                                        margin=dict(l=0, r=0, t=0, b=0),
+                                        height=20,
+                                        width=None,
+                                        barmode='overlay',
+                                        paper_bgcolor='rgba(0,0,0,0)',
+                                        plot_bgcolor='rgba(0,0,0,0)',
+                                        showlegend=False
+                                    )
+                                },
+                                config={'displayModeBar': False},
+                                style={'height': '20px', 'flex': '1'}
+                            ),
+                            html.Div(f"{entry_points['containers']['count']}", style={'width': '30px', 'textAlign': 'right', 'fontSize': '14px'})
+                        ]),
+                    ]),
+                    
+                    # Bar chart
+                    html.Div(style={'marginTop': '30px'}, children=[
+                        dcc.Graph(
+                            figure={
+                                'data': [
+                                    go.Bar(
+                                        x=bar_data['day'],
+                                        y=bar_data['value1'],
+                                        marker=dict(color=colors['purple']),
+                                        name='Value 1'
+                                    ),
+                                    go.Bar(
+                                        x=bar_data['day'],
+                                        y=bar_data['value2'],
+                                        marker=dict(color=colors['orange']),
+                                        name='Value 2'
+                                    )
+                                ],
+                                'layout': go.Layout(
+                                    xaxis=dict(
+                                        showgrid=False,
+                                        zeroline=False,
+                                        tickfont=dict(size=10, color='#999999')
+                                    ),
+                                    yaxis=dict(
+                                        showgrid=False,
+                                        zeroline=False,
+                                        showticklabels=False
+                                    ),
+                                    margin=dict(l=20, r=20, t=20, b=40),
+                                    barmode='group',
+                                    paper_bgcolor='rgba(0,0,0,0)',
+                                    plot_bgcolor='rgba(0,0,0,0)',
+                                    showlegend=False,
+                                    height=150
+                                )
+                            },
+                            config={'displayModeBar': False}
+                        )
+                    ])
+                ]),
+                
+                # Right panel - Main assets
+                html.Div(style={'flex': '1', 'backgroundColor': colors['card_bg'], 'borderRadius': '8px', 'padding': '20px'}, children=[
+                    html.H3("main assets", style={'margin': '0 0 20px 0', 'fontSize': '16px', 'fontWeight': 'normal'}),
+                    html.Div(style={'display': 'grid', 'gridTemplateColumns': '1fr 1fr', 'gap': '15px'}, children=[
+                        # Discovered assets
+                        html.Div(style={'backgroundColor': colors['background'], 'borderRadius': '8px', 'padding': '15px'}, children=[
+                            html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '15px'}, children=[
+                                html.I(className="fa fa-search", style={'color': colors['purple'], 'fontSize': '18px'}),
+                                html.Span(f"{main_assets['discovered']}", style={'fontSize': '32px', 'fontWeight': 'bold'})
+                            ]),
+                            html.Div("discovered assets", style={'fontSize': '14px', 'color': '#999'}),
+                            html.Hr(style={'border': '0', 'borderTop': '1px solid #333', 'margin': '15px 0'}),
+                            html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'fontSize': '13px'}, children=[
+                                html.Div("domains:", style={'color': '#999'}),
+                                html.Div(f"{main_assets['domains']}")
+                            ]),
+                            html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'fontSize': '13px', 'marginTop': '8px'}, children=[
+                                html.Div("IP addresses:", style={'color': '#999'}),
+                                html.Div(f"{main_assets['ip_addresses']}")
+                            ])
+                        ]),
+                        
+                        # Pending verification
+                        html.Div(style={'backgroundColor': colors['background'], 'borderRadius': '8px', 'padding': '15px'}, children=[
+                            html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '15px'}, children=[
+                                html.I(className="fa fa-clock", style={'color': colors['green'], 'fontSize': '18px'}),
+                                html.Span(f"{main_assets['pending']}", style={'fontSize': '32px', 'fontWeight': 'bold'})
+                            ]),
+                            html.Div("pending to verify", style={'fontSize': '14px', 'color': '#999'}),
+                            html.Hr(style={'border': '0', 'borderTop': '1px solid #333', 'margin': '15px 0'}),
+                            html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'fontSize': '13px'}, children=[
+                                html.Div("IP addresses:", style={'color': '#999'}),
+                                html.Div(f"{main_assets['ip_addresses']}")
+                            ])
+                        ]),
+                        
+                        # Active assets
+                        html.Div(style={'backgroundColor': colors['background'], 'borderRadius': '8px', 'padding': '15px'}, children=[
+                            html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '15px'}, children=[
+                                html.I(className="fa fa-check-circle", style={'color': colors['purple'], 'fontSize': '18px'}),
+                                html.Span(f"{main_assets['active']}", style={'fontSize': '32px', 'fontWeight': 'bold'})
+                            ]),
+                            html.Div("active valid assets", style={'fontSize': '14px', 'color': '#999'}),
+                            html.Hr(style={'border': '0', 'borderTop': '1px solid #333', 'margin': '15px 0'}),
+                            html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'fontSize': '13px'}, children=[
+                                html.Div("subdomains:", style={'color': '#999'}),
+                                html.Div(f"{main_assets['subdomains']}")
+                            ])
+                        ]),
+                        
+                        # Issues found
+                        html.Div(style={'backgroundColor': colors['background'], 'borderRadius': '8px', 'padding': '15px'}, children=[
+                            html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '15px'}, children=[
+                                html.I(className="fa fa-times-circle", style={'color': colors['red'], 'fontSize': '18px'}),
+                                html.Span(f"{main_assets['found']}", style={'fontSize': '32px', 'fontWeight': 'bold'})
+                            ]),
+                            html.Div("issues found", style={'fontSize': '14px', 'color': '#999'}),
+                            html.Hr(style={'border': '0', 'borderTop': '1px solid #333', 'margin': '15px 0'}),
+                            html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'fontSize': '13px'}, children=[
+                                html.Div("IP ranges:", style={'color': '#999'}),
+                                html.Div(f"{main_assets['ip_ranges']}")
+                            ])
+                        ])
+                    ])
+                ])
+            ]),
+            
+            # Bottom section - Reporting, trials, issues
+            html.Div(style={'display': 'flex', 'gap': '20px'}, children=[
+                # Reporting section
+                html.Div(style={'flex': '1', 'backgroundColor': colors['card_bg'], 'borderRadius': '8px', 'padding': '20px'}, children=[
+                    html.H3("reporting", style={'margin': '0 0 20px 0', 'fontSize': '16px', 'fontWeight': 'normal'}),
+                    html.Div(style={'display': 'grid', 'gridTemplateColumns': '1fr 1fr', 'gap': '15px'}, children=[
+                        # Processed
+                        html.Div(style={'textAlign': 'center'}, children=[
+                            html.Div(f"{reporting['processed']}", style={'fontSize': '36px', 'fontWeight': 'bold', 'color': colors['text']}),
+                            html.Div("processed", style={'fontSize': '14px', 'color': '#999', 'marginTop': '5px'})
+                        ]),
+                        # Escalated
+                        html.Div(style={'textAlign': 'center'}, children=[
+                            html.Div(f"{reporting['escalated']}", style={'fontSize': '36px', 'fontWeight': 'bold', 'color': colors['text']}),
+                            html.Div("escalated", style={'fontSize': '14px', 'color': '#999', 'marginTop': '5px'})
+                        ]),
+                        # Sent to consultants
+                        html.Div(style={'textAlign': 'center'}, children=[
+                            html.Div(f"{reporting['sent_to_consultants']}", style={'fontSize': '36px', 'fontWeight': 'bold', 'color': colors['text']}),
+                            html.Div("sent to consultants", style={'fontSize': '14px', 'color': '#999', 'marginTop': '5px'})
+                        ]),
+                        # Pending
+                        html.Div(style={'textAlign': 'center'}, children=[
+                            html.Div(f"{reporting['pending']}", style={'fontSize': '36px', 'fontWeight': 'bold', 'color': colors['text']}),
+                            html.Div("pending", style={'fontSize': '14px', 'color': '#999', 'marginTop': '5px'})
+                        ])
+                    ])
+                ]),
+                
+                # Ongoing trials
+                html.Div(style={'flex': '1', 'backgroundColor': colors['card_bg'], 'borderRadius': '8px', 'padding': '20px'}, children=[
+                    html.H3("ongoing trials", style={'margin': '0 0 20px 0', 'fontSize': '16px', 'fontWeight': 'normal'}),
+                    # DOM clobbering
+                    html.Div(style={'marginBottom': '15px'}, children=[
+                        html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'marginBottom': '5px'}, children=[
+                            html.Div("DOM clobbering", style={'fontSize': '14px'}),
+                        ]),
+                        html.Div(style={'display': 'flex', 'gap': '3px'}, children=[
+                            *[html.Div(style={'width': '10px', 'height': '10px', 'backgroundColor': colors['purple'], 'borderRadius': '2px'}) for _ in range(trials['DOM_clobbering'])],
+                            *[html.Div(style={'width': '10px', 'height': '10px', 'backgroundColor': '#333', 'borderRadius': '2px'}) for _ in range(10 - trials['DOM_clobbering'])]
+                        ])
+                    ]),
+                    # XML entities
+                    html.Div(style={'marginBottom': '15px'}, children=[
+                        html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'marginBottom': '5px'}, children=[
+                            html.Div("XML entities", style={'fontSize': '14px'}),
+                        ]),
+                        html.Div(style={'display': 'flex', 'gap': '3px'}, children=[
+                            *[html.Div(style={'width': '10px', 'height': '10px', 'backgroundColor': colors['green'], 'borderRadius': '2px'}) for _ in range(trials['XMl_entities'])],
+                            *[html.Div(style={'width': '10px', 'height': '10px', 'backgroundColor': '#333', 'borderRadius': '2px'}) for _ in range(10 - trials['XMl_entities'])]
+                        ])
+                    ]),
+                    # SSRF
+                    html.Div(style={'marginBottom': '15px'}, children=[
+                        html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'marginBottom': '5px'}, children=[
+                            html.Div("SSRF", style={'fontSize': '14px'}),
+                        ]),
+                        html.Div(style={'display': 'flex', 'gap': '3px'}, children=[
+                            *[html.Div(style={'width': '10px', 'height': '10px', 'backgroundColor': colors['purple'], 'borderRadius': '2px'}) for _ in range(trials['SSRF'])],
+                            *[html.Div(style={'width': '10px', 'height': '10px', 'backgroundColor': '#333', 'borderRadius': '2px'}) for _ in range(10 - trials['SSRF'])]
+                        ])
+                    ]),
+                    # SQL injections
+                    html.Div(style={'marginBottom': '15px'}, children=[
+                        html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'marginBottom': '5px'}, children=[
+                            html.Div("SQL injections", style={'fontSize': '14px'}),
+                        ]),
+                        html.Div(style={'display': 'flex', 'gap': '3px'}, children=[
+                            *[html.Div(style={'width': '10px', 'height': '10px', 'backgroundColor': colors['red'], 'borderRadius': '2px'}) for _ in range(trials['SQL_injections'])],
+                            *[html.Div(style={'width': '10px', 'height': '10px', 'backgroundColor': '#333', 'borderRadius': '2px'}) for _ in range(10 - trials['SQL_injections'])]
+                        ])
+                    ]),
+                    html.Button("configure new tests", style={
+                        'backgroundColor': colors['light_bg'],
+                        'color': colors['text'],
+                        'border': 'none',
+                        'padding': '8px 15px',
+                        'borderRadius': '4px',
+                        'marginTop': '10px',
+                        'cursor': 'pointer'
+                    })
+                ]),
+                
+                # Issues stats
+                html.Div(style={'flex': '1', 'backgroundColor': colors['card_bg'], 'borderRadius': '8px', 'padding': '20px'}, children=[
+                    html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '20px'}, children=[
+                        html.H3("issues total", style={'margin': '0', 'fontSize': '16px', 'fontWeight': 'normal'}),
+                        html.Div(f"{issues['total']}", style={'fontSize': '18px', 'fontWeight': 'bold'})
+                    ]),
+                    
+                    # Low issues
+                    html.Div(style={'marginBottom': '15px'}, children=[
+                        html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'marginBottom': '5px'}, children=[
+                            html.Div("low", style={'fontSize': '14px'}),
+                            html.Div(f"{issues['low']}%", style={'fontSize': '14px'})
+                        ]),
+                        html.Div(style={'width': '100%', 'height': '6px', 'backgroundColor': '#333', 'borderRadius': '3px', 'overflow': 'hidden'}, children=[
+                            html.Div(style={
+                                'width': f"{issues['low']}%",
+                                'height': '100%',
+                                'backgroundColor': colors['green']
+                            })
+                        ])
+                    ]),
+                    
+                    # Medium issues
+                    html.Div(style={'marginBottom': '15px'}, children=[
+                        html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'marginBottom': '5px'}, children=[
+                            html.Div("medium", style={'fontSize': '14px'}),
+                            html.Div(f"{issues['medium']}%", style={'fontSize': '14px'})
+                        ]),
+                        html.Div(style={'width': '100%', 'height': '6px', 'backgroundColor': '#333', 'borderRadius': '3px', 'overflow': 'hidden'}, children=[
+                            html.Div(style={
+                                'width': f"{issues['medium']}%",
+                                'height': '100%',
+                                'backgroundColor': colors['purple']
+                            })
+                        ])
+                    ]),
+                    
+                    # Critical issues
+                    html.Div(style={'marginBottom': '15px'}, children=[
+                        html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'marginBottom': '5px'}, children=[
+                            html.Div("critical", style={'fontSize': '14px'}),
+                            html.Div(f"{issues['critical']}%", style={'fontSize': '14px'})
+                        ]),
+                        html.Div(style={'width': '100%', 'height': '6px', 'backgroundColor': '#333', 'borderRadius': '3px', 'overflow': 'hidden'}, children=[
+                            html.Div(style={
+                                'width': f"{issues['critical']}%",
+                                'height': '100%',
+                                'backgroundColor': colors['red']
+                            })
+                        ])
+                    ]),
+                    
+                    # Severe issues
+                    html.Div(style={'marginBottom': '15px'}, children=[
+                        html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'marginBottom': '5px'}, children=[
+                            html.Div("severe", style={'fontSize': '14px'}),
+                            html.Div(f"{issues['severe']}%", style={'fontSize': '14px'})
+                        ]),
+                        html.Div(style={'width': '100%', 'height': '6px', 'backgroundColor': '#333', 'borderRadius': '3px', 'overflow': 'hidden'}, children=[
+                            html.Div(style={
+                                'width': f"{issues['severe']}%",
+                                'height': '100%',
+                                'backgroundColor': colors['orange']
+                            })
+                        ])
+                    ])
+                ])
+            ])
+        ])
+    ])
+])
+
+# Add CSS for Font Awesome (you'll need to install this or use a CDN link in a real application)
+app.index_string = '''
+<!DOCTYPE html>
+<html>
+    <head>
+        {%metas%}
+        <title>{%title%}</title>
+        {%favicon%}
+        {%css%}
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+        <style>
+            body {
+                margin: 0;
+                padding: 0;
+                font-family: Arial, sans-serif;
+                background-color: #121212;
+                color: #FFFFFF;
+            }
+            
+            /* Custom scrollbar */
+            ::-webkit-scrollbar {
+                width: 8px;
+                height: 8px;
+            }
+            
+            ::-webkit-scrollbar-track {
+                background: #1E1E1E;
+            }
+            
+            ::-webkit-scrollbar-thumb {
+                background: #555;
+                border-radius: 4px;
+            }
+            
+            ::-webkit-scrollbar-thumb:hover {
+                background: #777;
+            }
+            
+            /* Button hover effects */
+            button:hover {
+                background-color: #3A3A3A !important;
+                transition: background-color 0.2s;
+            }
+            
+            /* Card hover effects */
+            .card-hover:hover {
+                box-shadow: 0 0 15px rgba(138, 116, 222, 0.1);
+                transition: box-shadow 0.3s;
+            }
+        </style>
+    </head>
+    <body>
+        {%app_entry%}
+        <footer>
+            {%config%}
+            {%scripts%}
+            {%renderer%}
+        </footer>
+    </body>
+</html>
+'''
+
+# For deployment
+if __name__ == '__main__':
+    app.run(debug=True)
