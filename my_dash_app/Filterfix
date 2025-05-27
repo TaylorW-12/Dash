@@ -1,0 +1,274 @@
+import dash
+from dash import dcc, html, Input, Output
+import plotly.express as px
+import pandas as pd
+from datetime import date
+import io
+import base64
+import matplotlib.pyplot as plt # For the waffle chart
+
+# Initialize the Dash app
+app = dash.Dash(__name__, use_pages=True)
+app.config.suppress_callback_exceptions = True # Important for multi-page apps with dynamic content
+
+# Sample data (replace with your actual data loading)
+df = pd.DataFrame({
+    "Date": pd.to_datetime(pd.date_range(start="2023-01-01", periods=100, freq="D")),
+    "Category": [f"Category {i % 3 + 1}" for i in range(100)],
+    "Value": [i + 10 for i in range(100)],
+    "SubCategory": [f"SubCat {(i % 5) + 1}" for i in range(100)],
+    "Amount": [i * 2 + 5 for i in range(100)]
+})
+
+# Global filter components
+global_filters = html.Div([
+    html.H3("Global Filters"),
+    html.Label("Date Range:"),
+    dcc.DatePickerRange(
+        id='date-range-filter',
+        min_date_allowed=df['Date'].min(),
+        max_date_allowed=df['Date'].max(),
+        start_date=df['Date'].min(),
+        end_date=df['Date'].max()
+    ),
+    html.Br(),
+    html.Label("Select Categories:"),
+    dcc.Checklist(
+        id='category-checkbox-filter',
+        options=[{'label': cat, 'value': cat} for cat in df['Category'].unique()],
+        value=df['Category'].unique().tolist(),
+        inline=True
+    ),
+    html.Br(),
+    html.Label("Select Sub-Category Type:"),
+    dcc.RadioItems(
+        id='subcategory-radio-filter',
+        options=[{'label': sub, 'value': sub} for sub in df['SubCategory'].unique()],
+        value=df['SubCategory'].unique().tolist()[0], # Default to first
+        inline=True
+    ),
+    # dcc.Store to store filtered data or filter parameters
+    dcc.Store(id='shared-filter-data', data={})
+])
+
+app.layout = html.Div([
+    html.H1("Multi-Page Dashboard with Global Filters", style={'textAlign': 'center'}),
+    html.Div([
+        dcc.Link("Page 1: Sunburst", href="/"),
+        html.Span(" | "),
+        dcc.Link("Page 2: Bar Charts", href="/page2"),
+        html.Span(" | "),
+        dcc.Link("Page 3: Waffle Chart", href="/page3"),
+    ], style={'textAlign': 'center', 'margin-bottom': '20px'}),
+
+    global_filters, # Include your global filters here
+
+    html.Hr(), # Separator
+
+    # This is where the content of each page will be loaded
+    dash.page_container
+])
+
+# Callback to update the dcc.Store with filter values
+@app.callback(
+    Output('shared-filter-data', 'data'),
+    Input('date-range-filter', 'start_date'),
+    Input('date-range-filter', 'end_date'),
+    Input('category-checkbox-filter', 'value'),
+    Input('subcategory-radio-filter', 'value')
+)
+def update_shared_filter_data(start_date, end_date, selected_categories, selected_subcategory):
+    # This callback simply stores the filter parameters
+    return {
+        'start_date': start_date,
+        'end_date': end_date,
+        'selected_categories': selected_categories,
+        'selected_subcategory': selected_subcategory
+    }
+
+if __name__ == '__main__':
+    app.run_server(debug=True)
+
+#PAGE 1
+
+import dash
+from dash import dcc, html, Input, Output
+import plotly.express as px
+import pandas as pd
+
+# Register this page with Dash
+dash.register_page(__name__, path='/', name='Sunburst Chart')
+
+# Assume df is loaded globally or passed in a more robust way
+# For this example, let's re-load or assume it's available.
+# In a real app, you might pass it as a parameter or load from a shared data source.
+df = pd.DataFrame({
+    "Date": pd.to_datetime(pd.date_range(start="2023-01-01", periods=100, freq="D")),
+    "Category": [f"Category {i % 3 + 1}" for i in range(100)],
+    "Value": [i + 10 for i in range(100)],
+    "SubCategory": [f"SubCat {(i % 5) + 1}" for i in range(100)],
+    "Amount": [i * 2 + 5 for i in range(100)]
+})
+
+layout = html.Div([
+    html.H2("Sunburst Chart", style={'textAlign': 'center'}),
+    dcc.Graph(id='sunburst-graph')
+])
+
+@dash.callback(
+    Output('sunburst-graph', 'figure'),
+    Input('shared-filter-data', 'data') # Input from the shared dcc.Store
+)
+def update_sunburst(filter_data):
+    if not filter_data: # Handle initial load where data might be empty
+        return {}
+
+    # Apply filters
+    filtered_df = df[
+        (df['Date'] >= filter_data['start_date']) &
+        (df['Date'] <= filter_data['end_date']) &
+        (df['Category'].isin(filter_data['selected_categories'])) &
+        (df['SubCategory'] == filter_data['selected_subcategory'])
+    ]
+
+    if filtered_df.empty:
+        return {'data': [], 'layout': {'title': 'No Data Available for Selected Filters'}}
+
+    fig = px.sunburst(
+        filtered_df,
+        path=['Category', 'SubCategory'],
+        values='Value',
+        title='Sunburst Chart of Categories and Subcategories'
+    )
+    return fig
+
+
+#PAGE 2
+import dash
+from dash import dcc, html, Input, Output
+import plotly.express as px
+import pandas as pd
+
+dash.register_page(__name__, name='Bar Charts')
+
+df = pd.DataFrame({
+    "Date": pd.to_datetime(pd.date_range(start="2023-01-01", periods=100, freq="D")),
+    "Category": [f"Category {i % 3 + 1}" for i in range(100)],
+    "Value": [i + 10 for i in range(100)],
+    "SubCategory": [f"SubCat {(i % 5) + 1}" for i in range(100)],
+    "Amount": [i * 2 + 5 for i in range(100)]
+})
+
+layout = html.Div([
+    html.H2("Bar Charts", style={'textAlign': 'center'}),
+    dcc.Graph(id='bar-chart-1'),
+    dcc.Graph(id='bar-chart-2')
+])
+
+@dash.callback(
+    Output('bar-chart-1', 'figure'),
+    Output('bar-chart-2', 'figure'),
+    Input('shared-filter-data', 'data')
+)
+def update_bar_charts(filter_data):
+    if not filter_data:
+        return {}, {}
+
+    filtered_df = df[
+        (df['Date'] >= filter_data['start_date']) &
+        (df['Date'] <= filter_data['end_date']) &
+        (df['Category'].isin(filter_data['selected_categories'])) &
+        (df['SubCategory'] == filter_data['selected_subcategory'])
+    ]
+
+    if filtered_df.empty:
+        return (
+            {'data': [], 'layout': {'title': 'No Data for Bar Chart 1'}},
+            {'data': [], 'layout': {'title': 'No Data for Bar Chart 2'}}
+        )
+
+    fig1 = px.bar(
+        filtered_df.groupby('Category')['Value'].sum().reset_index(),
+        x='Category',
+        y='Value',
+        title='Total Value by Category'
+    )
+
+    fig2 = px.bar(
+        filtered_df.groupby('SubCategory')['Amount'].sum().reset_index(),
+        x='SubCategory',
+        y='Amount',
+        title='Total Amount by SubCategory'
+    )
+    return fig1, fig2
+
+
+#Page 3
+import dash
+from dash import dcc, html, Input, Output
+import pandas as pd
+import matplotlib.pyplot as plt
+from io import BytesIO
+import base64
+from pywaffle import Waffle # You might need to install this: pip install pywaffle
+
+dash.register_page(__name__, name='Waffle Chart')
+
+df = pd.DataFrame({
+    "Date": pd.to_datetime(pd.date_range(start="2023-01-01", periods=100, freq="D")),
+    "Category": [f"Category {i % 3 + 1}" for i in range(100)],
+    "Value": [i + 10 for i in range(100)],
+    "SubCategory": [f"SubCat {(i % 5) + 1}" for i in range(100)],
+    "Amount": [i * 2 + 5 for i in range(100)]
+})
+
+layout = html.Div([
+    html.H2("Waffle Chart", style={'textAlign': 'center'}),
+    html.Div(id='waffle-chart-container') # Use a Div to hold the image
+])
+
+@dash.callback(
+    Output('waffle-chart-container', 'children'),
+    Input('shared-filter-data', 'data')
+)
+def update_waffle_chart(filter_data):
+    if not filter_data:
+        return html.Div("No data available for waffle chart.")
+
+    filtered_df = df[
+        (df['Date'] >= filter_data['start_date']) &
+        (df['Date'] <= filter_data['end_date']) &
+        (df['Category'].isin(filter_data['selected_categories'])) &
+        (df['SubCategory'] == filter_data['selected_subcategory'])
+    ]
+
+    if filtered_df.empty:
+        return html.Div("No Data Available for Waffle Chart with Selected Filters")
+
+    # Group data for the waffle chart (e.g., by Category proportion)
+    category_counts = filtered_df['Category'].value_counts()
+    data = category_counts.to_dict()
+
+    if not data:
+        return html.Div("No data to create waffle chart.")
+
+    # Create the waffle chart using Matplotlib
+    fig = plt.figure(
+        FigureClass=Waffle,
+        rows=10,
+        columns=10,
+        values=data,
+        colors=["#20B2AA", "#FF8C00", "#6A5ACD"], # Example colors
+        legend={'loc': 'upper left', 'bbox_to_anchor': (1, 1)},
+        figsize=(8, 6)
+    )
+    fig.set_tight_layout(True)
+
+    # Save the Matplotlib figure to a BytesIO object
+    buf = BytesIO()
+    plt.savefig(buf, format="png")
+    plt.close(fig) # Close the figure to free up memory
+    data = base64.b64encode(buf.getbuffer()).decode("ascii")
+
+    # Return the image as an html.Img component
+    return html.Img(src=f"data:image/png;base64,{data}", style={'display': 'block', 'margin': 'auto'})
