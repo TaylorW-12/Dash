@@ -1,0 +1,252 @@
+import dash
+from dash import dcc, html
+import dash_bootstrap_components as dbc
+
+# --- 1. Initialize the Dash App ---
+# Using a slightly softer dark theme (Vapor) for a different feel,
+# and Bootstrap Icons.
+app = dash.Dash(__name__, external_stylesheets=[
+    dbc.themes.VAPOR, # A slightly softer dark theme
+    "https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css"
+])
+
+# --- 2. Define Feature Section Data ---
+# This data drives the content for the "What We Offer" section
+features_data = [
+    {
+        'title': 'Hierarchical Insights with Sunburst',
+        'description': 'Unravel complex data structures with interactive sunburst charts. Drill down into categories to discover hidden patterns and relationships.',
+        'icon': 'bi bi-compass-fill', # Example: a compass or navigation icon
+        'color': 'primary', # Bootstrap theme color
+        'link_text': 'Explore Sunburst Charts',
+        'href': '/page1'
+    },
+    {
+        'title': 'Comparative Analysis with Bar Charts',
+        'description': 'Quickly compare performance across different dimensions. Visualize trends, outliers, and distributions with dynamic and customizable bar charts.',
+        'icon': 'bi bi-bar-chart-line-fill', # Example: line bar chart
+        'color': 'success',
+        'link_text': 'View Bar Chart Details',
+        'href': '/page2'
+    },
+    {
+        'title': 'Proportional Views with Waffle Charts',
+        'description': 'Represent parts-to-whole relationships in an engaging, grid-based format. Perfect for showcasing proportions and percentages at a glance.',
+        'icon': 'bi bi-grid-fill', # Example: grid icon
+        'color': 'info',
+        'link_text': 'See Waffle Chart Example',
+        'href': '/page3'
+    },
+    {
+        'title': 'Custom Reporting & Export',
+        'description': 'Generate tailored reports and export your visualizations. Get the data you need, in the format you prefer, effortlessly.',
+        'icon': 'bi bi-file-earmark-arrow-down-fill', # Example: download icon
+        'color': 'warning',
+        'link_text': 'Request Custom Report',
+        'href': '/custom-reports'
+    },
+]
+
+# --- 3. Define the Page Layout ---
+app.layout = html.Div([
+    # Navbar
+    dbc.NavbarSimple(
+        children=[
+            dbc.NavItem(dbc.NavLink("Home", href="/", active=True)),
+            dbc.NavItem(dbc.NavLink("Page 1", href="/page1")),
+            dbc.NavItem(dbc.NavLink("Page 2", href="/page2")),
+            dbc.NavItem(dbc.NavLink("Page 3", href="/page3")),
+        ],
+        brand="Advanced Analytics Dashboard",
+        brand_href="#",
+        color="primary", # Navbar color from theme
+        dark=True,
+        className="mb-0 shadow-sm", # mb-0 to remove margin below navbar
+        style={'position': 'sticky', 'top': 0, 'zIndex': 1050} # Sticky navbar
+    ),
+
+    # --- Hero Section ---
+    dbc.Container(
+        html.Div([
+            html.H1(
+                "Your Data, Your Story.",
+                className="display-2 fw-bolder text-light mb-4 animate-fade-in-up"
+            ),
+            html.P(
+                "Transform complex data into actionable insights with our intuitive and powerful dashboard solutions.",
+                className="lead text-info max-w-lg mx-auto mb-5 animate-fade-in-up delay-100"
+            ),
+            dbc.Button(
+                "Dive into Dashboards",
+                color="primary", # Theme's primary button color
+                size="lg",
+                className="rounded-pill px-5 py-3 shadow animate-fade-in-up delay-200"
+            )
+        ], className="text-center py-5 my-5"), # Added my-5 for more vertical spacing
+        fluid=True,
+        className="bg-dark text-light hero-section" # bg-dark for the hero section background
+    ),
+
+    # --- "What We Offer" / Feature Showcase Section ---
+    dbc.Container(
+        [
+            html.H2("Discover Key Features", className="display-4 fw-bold text-center text-primary my-5"),
+            dbc.Row(
+                [
+                    dbc.Col(
+                        dbc.Card(
+                            [
+                                dbc.CardBody(
+                                    [
+                                        html.Div(html.I(className=f"{feature['icon']} feature-icon mb-3 text-{feature['color']}"),
+                                                 className="text-center"),
+                                        html.H3(feature['title'], className="card-title text-light text-center mb-3"),
+                                        html.P(feature['description'], className="card-text text-muted text-center flex-grow mb-4"),
+                                        dbc.Button(feature['link_text'], href=feature['href'], color=feature['color'], outline=True, className="w-100 rounded-pill")
+                                    ]
+                                ),
+                            ],
+                            className="h-100 border-0 shadow-lg bg-dark text-light feature-card",
+                            style={'transition': 'transform 0.3s ease-in-out, box-shadow 0.3s ease-in-out', 'cursor': 'pointer'}
+                        ),
+                        lg=3, md=6, sm=12,
+                        className="mb-4 d-flex align-items-stretch" # flex for equal height cards
+                    ) for feature in features_data
+                ],
+                className="justify-content-center"
+            )
+        ],
+        fluid=True,
+        className="py-5 bg-secondary-dark" # Slightly different background for this section
+    ),
+
+    # --- Key Metrics Summary Section ---
+    dbc.Container(
+        [
+            html.H2("At a Glance", className="display-4 fw-bold text-center text-light my-5"),
+            dbc.Row(
+                [
+                    dbc.Col(
+                        html.Div([
+                            html.P("Total Revenue", className="lead text-muted mb-1"),
+                            html.H3("$1.2M", className="display-5 text-primary fw-bold")
+                        ], className="text-center p-4 rounded-3 border border-secondary bg-dark shadow-sm h-100"),
+                        md=4, className="mb-4 d-flex"
+                    ),
+                    dbc.Col(
+                        html.Div([
+                            html.P("Active Users", className="lead text-muted mb-1"),
+                            html.H3("15,423", className="display-5 text-success fw-bold")
+                        ], className="text-center p-4 rounded-3 border border-secondary bg-dark shadow-sm h-100"),
+                        md=4, className="mb-4 d-flex"
+                    ),
+                    dbc.Col(
+                        html.Div([
+                            html.P("Growth Rate (YoY)", className="lead text-muted mb-1"),
+                            html.H3("+18.7%", className="display-5 text-warning fw-bold")
+                        ], className="text-center p-4 rounded-3 border border-secondary bg-dark shadow-sm h-100"),
+                        md=4, className="mb-4 d-flex"
+                    ),
+                ],
+                className="justify-content-center"
+            )
+        ],
+        fluid=True,
+        className="py-5 bg-darker" # Even darker background for this section
+    ),
+
+    # --- Footer ---
+    html.Footer(
+        html.Div(
+            html.P("© 2023 Advanced Analytics Dashboard. All rights reserved.", className="text-center text-muted m-0"),
+            className="py-3"
+        ),
+        className="bg-primary shadow-lg" # Footer with primary theme color
+    )
+])
+
+# --- Custom CSS for animations and specific styling ---
+# In a real app, this would be in 'assets/style.css'
+app.index_string = '''
+<!DOCTYPE html>
+<html>
+    <head>
+        {%metas%}
+        <title>{%title%}</title>
+        {%favicon%}
+        {%css%}
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+        <style>
+            body {
+                font-family: 'Inter', sans-serif;
+                /* Overriding default Vapor background for deeper dark */
+                background-color: #1a202c !important; 
+            }
+            .hero-section {
+                /* Add a subtle gradient or pattern for more visual interest if desired */
+                /* background: linear-gradient(135deg, #222d3d, #1a202c) !important; */
+                /* Or a simple color */
+                background-color: #263238 !important; /* A dark slate grey */
+                padding-top: 100px !important;
+                padding-bottom: 100px !important;
+            }
+            .bg-secondary-dark {
+                 background-color: #2d3843 !important; /* Slightly lighter than hero */
+            }
+            .bg-darker {
+                 background-color: #1f272e !important; /* Even darker for contrast */
+            }
+
+
+            /* Animation for Hero Section */
+            @keyframes fadeInFromBottom {
+                from { opacity: 0; transform: translateY(20px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+            .animate-fade-in-up {
+                animation: fadeInFromBottom 1s ease-out forwards;
+                opacity: 0; /* Start invisible */
+            }
+            .delay-100 { animation-delay: 0.1s; }
+            .delay-200 { animation-delay: 0.2s; }
+
+            /* Feature Card Hover Effects */
+            .feature-card:hover {
+                transform: translateY(-8px) scale(1.02); /* More pronounced lift and grow */
+                box-shadow: 0 15px 30px rgba(0,0,0,0.4) !important; /* Deeper shadow */
+            }
+            .feature-icon {
+                font-size: 3.5rem; /* Larger icons */
+                transition: transform 0.3s ease-in-out;
+            }
+            .feature-card:hover .feature-icon {
+                transform: scale(1.1); /* Icon scales on hover */
+            }
+
+            /* General text color adjustments for Vapor theme on dark backgrounds */
+            .text-light { color: #f8f9fa !important; } /* Ensure light text */
+            .text-muted { color: #b0b0b0 !important; } /* Ensure muted text is visible */
+
+            /* Navbar link hover effect */
+            .navbar-nav .nav-link:hover {
+                color: var(--bs-light) !important; /* Brighter color on hover */
+                text-shadow: 0 0 8px rgba(255, 255, 255, 0.3); /* Subtle glow */
+            }
+            /* Main container padding for sections */
+            .dbc-container { padding-left: 2rem; padding-right: 2rem; }
+        </style>
+    </head>
+    <body>
+        {%app_entry%}
+        <footer>
+            </footer>
+        {%config%}
+        {%scripts%}
+        {%renderer%}
+    </body>
+</html>
+'''
+
+# --- 6. Run the App ---
+if __name__ == '__main__':
+    app.run(debug=True)
