@@ -1,0 +1,14 @@
+layout = html.Div([
+    html.H2("Sunburst Chart", style={'textAlign': 'center'}),
+    # Add a Div to wrap the dcc.Graph and apply centering styles
+    html.Div(
+        dcc.Graph(id='sunburst-graph'),
+        style={
+            'display': 'flex',        # Use flexbox
+            'justifyContent': 'center', # Center horizontally
+            'alignItems': 'center',     # Center vertically (if needed, though usually not for full-width graphs)
+            'width': '100%',            # Ensure the container takes full width
+            'margin': '0 auto'          # Optional: Add auto margins for older centering methods
+        }
+    )
+])
