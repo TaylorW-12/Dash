@@ -1,0 +1,67 @@
+import os
+import zipfile
+import base64
+import concurrent.futures
+from email import policy
+from email.parser import BytesParser
+import ezdxf
+import matplotlib.pyplot as plt
+
+INPUT_DIR = 'your_input_folder'
+OUTPUT_DIR = 'output_folder'
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+def process_email(file_path):
+    with open(file_path, 'rb') as f:
+        msg = BytesParser(policy=policy.default).parse(f)
+    content = msg.get_body(preferencelist=('plain')).get_content()
+    return f"EMAIL FILE: {file_path}\nCONTENT:\n{content}\n"
+
+def process_zip(file_path):
+    content_list = []
+    with zipfile.ZipFile(file_path, 'r') as zip_ref:
+        for name in zip_ref.namelist():
+            content_list.append(f"- {name}")
+    return f"ZIP FILE: {file_path}\nCONTENT:\n" + "\n".join(content_list) + "\n"
+
+def process_cad(file_path):
+    doc = ezdxf.readfile(file_path)
+    msp = doc.modelspace()
+    fig = plt.figure()
+    ax = fig.add_axes([0, 0, 1, 1])
+    for e in msp:
+        if e.dxftype() == 'LINE':
+            start, end = e.dxf.start, e.dxf.end
+            ax.plot([start.x, end.x], [start.y, end.y], color='black')
+    img_path = os.path.join(OUTPUT_DIR, os.path.basename(file_path) + '.png')
+    plt.savefig(img_path)
+    plt.close(fig)
+    return f"CAD FILE: {file_path}\nIMAGE GENERATED: {img_path}\n"
+
+def handle_file(file_path):
+    ext = os.path.splitext(file_path)[1].lower()
+    try:
+        if ext == '.eml':
+            return process_email(file_path)
+        elif ext == '.zip':
+            return process_zip(file_path)
+        elif ext in ['.dwg', '.dxf']:
+            return process_cad(file_path)
+        else:
+            return f"SKIPPED: {file_path}\n"
+    except Exception as e:
+        return f"ERROR processing {file_path}: {str(e)}\n"
+
+def main():
+    files = [os.path.join(INPUT_DIR, f) for f in os.listdir(INPUT_DIR)]
+    output_path = os.path.join(OUTPUT_DIR, 'output_summary.txt')
+
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        results = executor.map(handle_file, files)
+
+    with open(output_path, 'w', encoding='utf-8') as out_file:
+        for result in results:
+            out_file.write(result + "\n")
+
+if __name__ == "__main__":
+    main()
