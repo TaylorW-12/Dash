@@ -1,0 +1,232 @@
+import os
+import zipfile
+import email
+from email import policy
+from email.parser import BytesParser
+from multiprocessing import Pool, cpu_count
+import logging
+import mimetypes # For more robust file type detection
+
+# --- Configuration ---
+OUTPUT_FILENAME = "file_scan_results.txt"
+LOG_FILENAME = "file_processing.log"
+CAD_EXTENSIONS = {'.dwg', '.dxf', '.step', '.stp', '.iges', '.igs', '.sldprt', '.sldasm', '.catpart', '.catproduct'} # Add more as needed
+EMAIL_EXTENSIONS = {'.eml', '.msg'}
+ZIP_EXTENSIONS = {'.zip'}
+
+# --- Logging Setup ---
+logging.basicConfig(filename=LOG_FILENAME, level=logging.INFO,
+                    format='%(asctime)s - %(levelname)s - %(message)s')
+
+# --- Helper Functions ---
+
+def get_file_type(file_path):
+    """
+    Determines the file type based on extension and MIME type.
+    """
+    _, ext = os.path.splitext(file_path)
+    ext = ext.lower()
+
+    if ext in EMAIL_EXTENSIONS:
+        return "email"
+    elif ext in ZIP_EXTENSIONS:
+        return "zip"
+    elif ext in CAD_EXTENSIONS:
+        return "cad"
+    else:
+        # Fallback to MIME type detection for more robustness
+        mime_type, _ = mimetypes.guess_type(file_path)
+        if mime_type:
+            if 'zip' in mime_type:
+                return "zip"
+            elif 'message/rfc822' in mime_type: # Common for .eml
+                return "email"
+            # Add more MIME type checks for CAD if specific ones are known
+            # e.g., 'application/acad', 'image/vnd.dwg'
+            # For now, primarily relying on CAD_EXTENSIONS
+    return "unknown"
+
+def process_email(file_path):
+    """
+    Extracts the subject and body from an email file.
+    """
+    try:
+        with open(file_path, 'rb') as fp:
+            msg = BytesParser(policy=policy.default).parse(fp)
+
+        subject = msg.get('subject', 'No Subject')
+        body = "No text body found."
+
+        if msg.is_multipart():
+            for part in msg.walk():
+                content_type = part.get_content_type()
+                content_disposition = str(part.get("Content-Disposition"))
+                if content_type == 'text/plain' and 'attachment' not in content_disposition:
+                    try:
+                        body_bytes = part.get_payload(decode=True)
+                        # Try common encodings
+                        for encoding in ['utf-8', 'latin-1', 'iso-8859-1']:
+                            try:
+                                body = body_bytes.decode(encoding)
+                                break
+                            except UnicodeDecodeError:
+                                continue
+                        else:
+                            body = "Could not decode body with common encodings."
+                        break
+                    except Exception as e:
+                        logging.warning(f"Could not decode part of email {file_path}: {e}")
+                        body = f"Error decoding body part: {e}"
+        else:
+            content_type = msg.get_content_type()
+            if content_type == 'text/plain':
+                try:
+                    body_bytes = msg.get_payload(decode=True)
+                    for encoding in ['utf-8', 'latin-1', 'iso-8859-1']:
+                        try:
+                            body = body_bytes.decode(encoding)
+                            break
+                        except UnicodeDecodeError:
+                            continue
+                    else:
+                        body = "Could not decode body with common encodings."
+                except Exception as e:
+                    logging.warning(f"Could not decode email body {file_path}: {e}")
+                    body = f"Error decoding body: {e}"
+
+        return f"--- Email File: {os.path.basename(file_path)} ---\nSubject: {subject}\nBody:\n{body}\n"
+    except Exception as e:
+        logging.error(f"Error processing email {file_path}: {e}")
+        return f"--- Email File: {os.path.basename(file_path)} ---\nError: Could not process email. See logs.\n"
+
+def process_zip(file_path):
+    """
+    Lists the contents of a zip file.
+    """
+    try:
+        with zipfile.ZipFile(file_path, 'r') as zip_ref:
+            file_list = zip_ref.namelist()
+            contents = "\n".join(file_list)
+            return f"--- Zip File: {os.path.basename(file_path)} ---\nContents:\n{contents}\n"
+    except zipfile.BadZipFile:
+        logging.error(f"Bad zip file: {file_path}")
+        return f"--- Zip File: {os.path.basename(file_path)} ---\nError: Bad zip file.\n"
+    except Exception as e:
+        logging.error(f"Error processing zip {file_path}: {e}")
+        return f"--- Zip File: {os.path.basename(file_path)} ---\nError: Could not process zip. See logs.\n"
+
+def process_cad(file_path):
+    """
+    Identifies a CAD file and notes it.
+    Placeholder for actual image capture.
+    """
+    # **Placeholder for CAD image generation**
+    # This is where you would integrate a command-line tool or library
+    # to convert the CAD file to an image (e.g., PNG, JPG) and then
+    # potentially save the image path or a reference to it.
+    #
+    # Example (conceptual, if you had a tool `cad_to_png_converter`):
+    # image_filename = f"{os.path.splitext(os.path.basename(file_path))[0]}.png"
+    # output_image_path = os.path.join("cad_images", image_filename) # Store images in a subfolder
+    # os.makedirs("cad_images", exist_ok=True)
+    # command = f"cad_to_png_converter \"{file_path}\" \"{output_image_path}\""
+    # try:
+    #     subprocess.run(command, shell=True, check=True, timeout=120) # Added timeout
+    #     return f"--- CAD File: {os.path.basename(file_path)} ---\nImage generated: {output_image_path}\n(Image generation placeholder - actual image path would be here)\n"
+    # except subprocess.CalledProcessError as e:
+    #     logging.error(f"CAD conversion failed for {file_path}: {e}")
+    #     return f"--- CAD File: {os.path.basename(file_path)} ---\nError: CAD conversion failed. (Placeholder)\n"
+    # except subprocess.TimeoutExpired:
+    #     logging.error(f"CAD conversion timed out for {file_path}")
+    #     return f"--- CAD File: {os.path.basename(file_path)} ---\nError: CAD conversion timed out. (Placeholder)\n"
+    # except Exception as e:
+    #     logging.error(f"Error processing CAD {file_path}: {e}")
+    #     return f"--- CAD File: {os.path.basename(file_path)} ---\nError: Could not process CAD. See logs. (Placeholder)\n"
+
+    logging.info(f"Identified CAD file: {file_path}")
+    return f"--- CAD File: {os.path.basename(file_path)} ---\n(CAD file identified - image generation not implemented in this version. See notes in code.)\n"
+
+def process_file_wrapper(file_path):
+    """
+    Wrapper function to determine file type and call the appropriate processor.
+    """
+    try:
+        file_type = get_file_type(file_path)
+        logging.info(f"Processing {file_path}, type: {file_type}")
+
+        if file_type == "email":
+            return process_email(file_path)
+        elif file_type == "zip":
+            return process_zip(file_path)
+        elif file_type == "cad":
+            return process_cad(file_path)
+        else:
+            # Optionally log or handle unknown files
+            # logging.info(f"Skipping unknown file type: {file_path}")
+            return None # Or some default string
+    except Exception as e:
+        logging.error(f"Unhandled error processing file {file_path}: {e}")
+        return f"--- File: {os.path.basename(file_path)} ---\nError: An unexpected error occurred during processing. See logs.\n"
+
+# --- Main Execution ---
+def main(directory_to_scan):
+    """
+    Scans a directory, processes files in parallel, and writes results to an output file.
+    """
+    files_to_process = []
+    for root, _, files in os.walk(directory_to_scan):
+        for file in files:
+            files_to_process.append(os.path.join(root, file))
+
+    if not files_to_process:
+        print("No files found in the specified directory.")
+        return
+
+    num_processes = min(cpu_count(), len(files_to_process)) # Use available CPUs, but not more than num files
+    if num_processes == 0 and len(files_to_process) > 0: # Edge case if cpu_count somehow returns 0
+        num_processes = 1
+
+    print(f"Starting processing of {len(files_to_process)} files using {num_processes} processes...")
+    logging.info(f"Starting processing of {len(files_to_process)} files using {num_processes} processes...")
+
+    # Using a Pool for parallel processing
+    # The 'with' statement ensures the pool is properly closed
+    with Pool(processes=num_processes) as pool:
+        # map_async is good for applying a function to a list of items
+        # and collecting results. It doesn't block the main thread until results.get() is called.
+        results_async = pool.map_async(process_file_wrapper, files_to_process)
+        # Wait for all processes to complete and get results
+        # Adding a timeout to results.get() can prevent indefinite blocking if a process hangs
+        try:
+            results = results_async.get(timeout=3600) # Timeout of 1 hour for all files
+        except TimeoutError:
+            logging.error("Processing timed out for the batch of files.")
+            print("Processing timed out. Some files may not have been processed. Check logs.")
+            # You might want to handle partial results here if needed
+            return
+
+
+    print(f"Processing complete. Writing results to {OUTPUT_FILENAME}...")
+    logging.info(f"Processing complete. Writing results to {OUTPUT_FILENAME}...")
+
+    with open(OUTPUT_FILENAME, 'w', encoding='utf-8') as outfile:
+        for result in results:
+            if result: # Only write if process_file_wrapper returned something
+                outfile.write(result + "\n" + "="*40 + "\n\n")
+
+    print("Done.")
+    logging.info("Script finished.")
+
+if __name__ == "__main__":
+    # --- IMPORTANT: Configure this path ---
+    target_directory = "path/to/your/large_files_directory" # <--- CHANGE THIS
+    # ---
+
+    if not os.path.isdir(target_directory):
+        print(f"Error: Directory '{target_directory}' not found. Please create it or provide a valid path.")
+        logging.error(f"Target directory not found: {target_directory}")
+    elif target_directory == "path/to/your/large_files_directory":
+         print(f"Error: Please change the 'target_directory' variable in the script to your actual directory path.")
+         logging.error("Default target_directory was not changed.")
+    else:
+        main(target_directory)
