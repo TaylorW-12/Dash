@@ -1,0 +1,164 @@
+# Use dcc.Store for Global Filter State (place this in app.layout)
+dcc.Store(id='global-filter-store', storage_type='session'),
+
+
+
+# Update global-filter-store When "Apply Filters" is Clicked
+@app.callback(
+    Output("global-filter-store", "data"),
+    Input("apply-filters", "n_clicks"),
+    State("year-dropdown", "value"),
+    State("category-radio", "value"),
+    State("region-checklist", "value"),
+    State("performance-range-slider", "value"),
+    prevent_initial_call=True
+)
+def store_filters(n_clicks, year, category, regions, performance_range):
+    return {
+        "year": year,
+        "category": category,
+        "regions": regions,
+        "performance_range": performance_range
+    }
+
+
+
+#Access Filters on Each Page Using the Store (on each page) 
+from dash import html, dcc, Output, Input
+
+def create_layout(app):
+    layout = html.Div([
+        dcc.Graph(id="price-performance-chart"),
+        dcc.Store(id="global-filter-store"),  # <- Optional if needed here
+    ])
+
+    @app.callback(
+        Output("price-performance-chart", "figure"),
+        Input("global-filter-store", "data")
+    )
+    def update_chart(filters):
+        if not filters:
+            raise dash.exceptions.PreventUpdate
+
+        # Use filters to update chart
+        year = filters["year"]
+        category = filters["category"]
+        regions = filters["regions"]
+        perf_range = filters["performance_range"]
+
+        # Replace with your own logic
+        return generate_chart(year, category, regions, perf_range)
+
+    return layout
+
+
+#Optional Reseat global-filter-store on reset button click 
+@app.callback(
+    Output("global-filter-store", "clear_data"),
+    Input("reset-filters", "n_clicks"),
+    prevent_initial_call=True
+)
+def reset_filters(n_clicks):
+    return True  # Clears the stored data
+
+
+#####Example with Sunburst-----
+# app.py
+import dash
+from dash import dcc, html, Input, Output, State
+from pages import overview
+
+app = dash.Dash(__name__, suppress_callback_exceptions=True)
+app.title = "Dashboard"
+server = app.server
+
+years = [2020, 2021, 2022, 2023, 2024]
+
+app.layout = html.Div([
+    dcc.Location(id="url"),
+    
+    # Global Filter Storage
+    dcc.Store(id="global-filter-store", storage_type="session"),
+
+    html.Div([
+        html.Div([
+            html.H2("Filters"),
+            dcc.Dropdown(
+                id="year-dropdown",
+                options=[{"label": str(y), "value": y} for y in years],
+                value=2024,
+                clearable=False
+            ),
+            html.Button("Apply Filters", id="apply-filters", n_clicks=0)
+        ], style={"width": "20%", "float": "left"}),
+
+        html.Div(id="page-content", style={"width": "80%", "float": "right"})
+    ])
+])
+
+# Store filter values
+@app.callback(
+    Output("global-filter-store", "data"),
+    Input("apply-filters", "n_clicks"),
+    State("year-dropdown", "value"),
+    prevent_initial_call=True
+)
+def update_filters(n_clicks, year):
+    return {"year": year}
+
+# Route pages
+@app.callback(
+    Output("page-content", "children"),
+    Input("url", "pathname")
+)
+def display_page(pathname):
+    return overview.create_layout(app)
+
+if __name__ == "__main__":
+    app.run_server(debug=True)
+
+
+
+###Page 2
+# pages/overview.py
+from dash import html, dcc, Input, Output
+import pandas as pd
+import plotly.express as px
+
+def create_layout(app):
+    layout = html.Div([
+        html.H3("Sunburst Chart: Portfolio Composition"),
+        dcc.Graph(id="sunburst-chart")
+    ])
+
+    @app.callback(
+        Output("sunburst-chart", "figure"),
+        Input("global-filter-store", "data")
+    )
+    def update_sunburst(filters):
+        # Dummy data
+        df = pd.DataFrame({
+            "Year": [2022, 2022, 2023, 2023, 2024, 2024],
+            "Asset Class": ["Equity", "Fixed Income"] * 3,
+            "Region": ["North America", "Europe", "Asia", "Europe", "North America", "Asia"],
+            "Value": [100, 150, 200, 130, 170, 190]
+        })
+
+        # Default if no filter applied yet
+        year = filters["year"] if filters else 2024
+
+        # Filter data
+        df_filtered = df[df["Year"] == year]
+
+        fig = px.sunburst(
+            df_filtered,
+            path=["Asset Class", "Region"],
+            values="Value",
+            title=f"Portfolio Composition for {year}"
+        )
+        return fig
+
+    return layout
+
+
+
