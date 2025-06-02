@@ -1,0 +1,60 @@
+import plotly.express as px
+from dash import Input, Output  # needed for the callback
+
+
+import pandas as pd
+
+df_sunburst = pd.DataFrame({
+    "Year": [2022, 2022, 2023, 2023, 2024, 2024],
+    "Asset Class": ["Equity", "Fixed Income"] * 3,
+    "Region": ["North America", "Europe", "Asia", "Europe", "North America", "Asia"],
+    "Value": [100, 150, 200, 130, 170, 190]
+})
+
+html.Div([
+    html.H6("Asset Allocation Breakdown", className="subtitle padded"),
+    dcc.Graph(id="sunburst-chart")
+], className="six columns"),
+# Row 5 (continued)
+html.Div(
+    [
+        html.Div(
+            [
+                html.H6("Risk Potential", className="subtitle padded"),
+                html.Img(
+                    src=app.get_asset_url("risk_reward.png"),
+                    className="risk-reward",
+                ),
+            ],
+            className="six columns",
+        ),
+        html.Div([
+            html.H6("Asset Allocation Breakdown", className="subtitle padded"),
+            dcc.Graph(id="sunburst-chart")
+        ], className="six columns"),
+    ],
+    className="row",
+),
+
+def register_callbacks(app):
+    @app.callback(
+        Output("sunburst-chart", "figure"),
+        Input("global-filter-store", "data")
+    )
+    def update_sunburst(filters):
+        # fallback year
+        year = filters["year"] if filters and "year" in filters else 2024
+
+        # filter dataframe
+        filtered_df = df_sunburst[df_sunburst["Year"] == year]
+
+        fig = px.sunburst(
+            filtered_df,
+            path=["Asset Class", "Region"],
+            values="Value",
+            title=f"Asset Allocation for {year}"
+        )
+
+        return fig
+from pages import overview
+overview.register_callbacks(app)
