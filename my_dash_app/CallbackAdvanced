@@ -1,0 +1,493 @@
+# Multi-Page Dash App with Overview Page Example
+import dash
+from dash import dcc, html, Input, Output, callback
+import plotly.express as px
+import plotly.graph_objects as go
+import pandas as pd
+import dash_bootstrap_components as dbc
+
+# Initialize the app
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP])
+
+# Sample data (replace with your actual data)
+df = pd.DataFrame({
+    'category': ['A', 'B', 'C', 'D', 'E'],
+    'values': [23, 45, 56, 78, 32],
+    'region': ['North', 'South', 'East', 'West', 'Central'],
+    'subcategory': ['A1', 'B1', 'C1', 'D1', 'E1']
+})
+
+# ============================================
+# LAYOUT COMPONENTS FOR OVERVIEW PAGE
+# ============================================
+
+def create_card_body(title, value, color="primary"):
+    """Create a card body component"""
+    return dbc.Card([
+        dbc.CardBody([
+            html.H4(title, className="card-title"),
+            html.H2(value, className="card-text", style={"color": f"var(--bs-{color})"})
+        ])
+    ], className="mb-3")
+
+def create_overview_layout():
+    """Create the overview page layout"""
+    return dbc.Container([
+        dbc.Row([
+            dbc.Col([
+                html.H1("Dashboard Overview", className="text-center mb-4"),
+                
+                # Control panel
+                dbc.Card([
+                    dbc.CardBody([
+                        dbc.Row([
+                            dbc.Col([
+                                html.Label("Select Category:"),
+                                dcc.Dropdown(
+                                    id='category-dropdown',
+                                    options=[{'label': cat, 'value': cat} for cat in df['category'].unique()],
+                                    value=df['category'].iloc[0],
+                                    multi=True
+                                )
+                            ], width=6),
+                            dbc.Col([
+                                html.Label("Select Region:"),
+                                dcc.Dropdown(
+                                    id='region-dropdown',
+                                    options=[{'label': reg, 'value': reg} for reg in df['region'].unique()],
+                                    value=df['region'].iloc[0]
+                                )
+                            ], width=6)
+                        ])
+                    ])
+                ], className="mb-4")
+            ])
+        ]),
+        
+        # Card Bodies Row
+        dbc.Row([
+            dbc.Col([
+                html.Div(id="card-bodies-container")
+            ])
+        ], className="mb-4"),
+        
+        # Charts Row with styled containers
+        dbc.Row([
+            dbc.Col([
+                dbc.Card([
+                    dbc.CardHeader([
+                        html.H5("📈 Category Analysis", className="mb-0", style={'color': '#2C3E50'})
+                    ], style={'background-color': '#F8F9FA', 'border-bottom': '2px solid #E9ECEF'}),
+                    dbc.CardBody([
+                        dcc.Graph(id="bar-chart-1", style={'height': '400px'})
+                    ], style={'padding': '10px'})
+                ], style={'box-shadow': '0 4px 6px rgba(0, 0, 0, 0.1)', 'border': 'none'})
+            ], width=6),
+            dbc.Col([
+                dbc.Card([
+                    dbc.CardHeader([
+                        html.H5("🗺️ Regional Insights", className="mb-0", style={'color': '#2C3E50'})
+                    ], style={'background-color': '#F8F9FA', 'border-bottom': '2px solid #E9ECEF'}),
+                    dbc.CardBody([
+                        dcc.Graph(id="bar-chart-2", style={'height': '400px'})
+                    ], style={'padding': '10px'})
+                ], style={'box-shadow': '0 4px 6px rgba(0, 0, 0, 0.1)', 'border': 'none'})
+            ], width=6)
+        ], className="mb-4"),
+        
+        dbc.Row([
+            dbc.Col([
+                dbc.Card([
+                    dbc.CardHeader([
+                        html.H5("☀️ Hierarchical Data View", className="mb-0", style={'color': '#2C3E50'})
+                    ], style={'background-color': '#F8F9FA', 'border-bottom': '2px solid #E9ECEF'}),
+                    dbc.CardBody([
+                        dcc.Graph(id="sunburst-chart", style={'height': '500px'})
+                    ], style={'padding': '10px'})
+                ], style={'box-shadow': '0 4px 6px rgba(0, 0, 0, 0.1)', 'border': 'none'})
+            ], width=8),
+            dbc.Col([
+                dbc.Card([
+                    dbc.CardHeader([
+                        html.H5("🍰 Distribution Overview", className="mb-0", style={'color': '#2C3E50'})
+                    ], style={'background-color': '#F8F9FA', 'border-bottom': '2px solid #E9ECEF'}),
+                    dbc.CardBody([
+                        dcc.Graph(id="pie-chart", style={'height': '500px'})
+                    ], style={'padding': '10px'})
+                ], style={'box-shadow': '0 4px 6px rgba(0, 0, 0, 0.1)', 'border': 'none'})
+            ], width=4)
+        ])
+    ], fluid=True)
+
+# ============================================
+# MAIN APP LAYOUT WITH PAGE ROUTING
+# ============================================
+
+def create_navbar():
+    """Create navigation bar"""
+    return dbc.NavbarSimple(
+        children=[
+            dbc.NavItem(dbc.NavLink("Home", href="/", active="exact")),
+            dbc.NavItem(dbc.NavLink("Overview", href="/overview", active="exact")),
+            dbc.NavItem(dbc.NavLink("Analytics", href="/analytics", active="exact")),
+        ],
+        brand="My Dashboard",
+        brand_href="/",
+        color="primary",
+        dark=True,
+        className="mb-4"
+    )
+
+# Main app layout
+app.layout = html.Div([
+    dcc.Location(id='url', refresh=False),
+    create_navbar(),
+    html.Div(id='page-content')
+])
+
+# ============================================
+# PAGE ROUTING CALLBACK
+# ============================================
+
+@callback(Output('page-content', 'children'),
+          Input('url', 'pathname'))
+def display_page(pathname):
+    if pathname == '/overview':
+        return create_overview_layout()
+    elif pathname == '/analytics':
+        return html.Div([
+            html.H1("Analytics Page"),
+            html.P("This is the analytics page content.")
+        ])
+    else:  # Default home page
+        return dbc.Container([
+            dbc.Row([
+                dbc.Col([
+                    html.H1("Welcome to the Dashboard", className="text-center"),
+                    html.P("Navigate to different pages using the menu above.", className="text-center"),
+                    dbc.Button("Go to Overview", href="/overview", color="primary", size="lg", className="me-2"),
+                    dbc.Button("Go to Analytics", href="/analytics", color="secondary", size="lg")
+                ], className="text-center")
+            ])
+        ])
+
+# ============================================
+# OVERVIEW PAGE CALLBACKS
+# ============================================
+
+@callback(
+    Output('card-bodies-container', 'children'),
+    [Input('category-dropdown', 'value'),
+     Input('region-dropdown', 'value')]
+)
+def update_card_bodies(selected_categories, selected_region):
+    """Update card bodies based on selections"""
+    # Filter data based on selections
+    if isinstance(selected_categories, list):
+        filtered_df = df[df['category'].isin(selected_categories)]
+    else:
+        filtered_df = df[df['category'] == selected_categories]
+    
+    if selected_region:
+        filtered_df = filtered_df[filtered_df['region'] == selected_region]
+    
+    # Calculate metrics
+    total_value = filtered_df['values'].sum()
+    avg_value = filtered_df['values'].mean()
+    count_items = len(filtered_df)
+    max_value = filtered_df['values'].max()
+    
+    # Create card bodies
+    cards = dbc.Row([
+        dbc.Col([
+            create_card_body("Total Value", f"{total_value:,}", "primary")
+        ], width=3),
+        dbc.Col([
+            create_card_body("Average Value", f"{avg_value:.1f}", "success")
+        ], width=3),
+        dbc.Col([
+            create_card_body("Count", f"{count_items}", "info")
+        ], width=3),
+        dbc.Col([
+            create_card_body("Maximum", f"{max_value}", "warning")
+        ], width=3)
+    ])
+    
+    return cards
+
+@callback(
+    Output('bar-chart-1', 'figure'),
+    [Input('category-dropdown', 'value'),
+     Input('region-dropdown', 'value')]
+)
+def update_bar_chart_1(selected_categories, selected_region):
+    """Update first bar chart with custom styling"""
+    # Filter data
+    if isinstance(selected_categories, list):
+        filtered_df = df[df['category'].isin(selected_categories)]
+    else:
+        filtered_df = df[df['category'] == selected_categories]
+    
+    # Create bar chart with custom colors
+    fig = px.bar(
+        filtered_df, 
+        x='category', 
+        y='values',
+        title='<b>Sales Performance by Category</b>',
+        color='category',
+        color_discrete_sequence=['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7']
+    )
+    
+    # Custom styling
+    fig.update_layout(
+        title={
+            'text': '<b style="color:#2C3E50; font-size:20px;">📊 Sales Performance by Category</b>',
+            'x': 0.5,
+            'xanchor': 'center',
+            'font': {'size': 18, 'family': 'Arial Black'}
+        },
+        xaxis_title='<b>Product Categories</b>',
+        yaxis_title='<b>Sales Value ($)</b>',
+        plot_bgcolor='rgba(248,249,250,0.8)',
+        paper_bgcolor='white',
+        font={'family': 'Arial', 'size': 12, 'color': '#2C3E50'},
+        showlegend=False,
+        margin=dict(t=80, b=50, l=50, r=50),
+        height=400
+    )
+    
+    # Style the bars
+    fig.update_traces(
+        marker_line_width=2,
+        marker_line_color='white',
+        hovertemplate='<b>%{x}</b><br>Sales: $%{y:,.0f}<extra></extra>',
+        texttemplate='$%{y:,.0f}',
+        textposition='outside'
+    )
+    
+    # Style axes
+    fig.update_xaxes(
+        tickfont={'size': 12, 'color': '#2C3E50'},
+        title_font={'size': 14, 'color': '#2C3E50'},
+        gridcolor='rgba(128,128,128,0.2)'
+    )
+    fig.update_yaxes(
+        tickfont={'size': 12, 'color': '#2C3E50'},
+        title_font={'size': 14, 'color': '#2C3E50'},
+        gridcolor='rgba(128,128,128,0.2)'
+    )
+    
+    return fig
+
+@callback(
+    Output('bar-chart-2', 'figure'),
+    [Input('category-dropdown', 'value'),
+     Input('region-dropdown', 'value')]
+)
+def update_bar_chart_2(selected_categories, selected_region):
+    """Update second bar chart with custom styling"""
+    # Filter data by region
+    if selected_region:
+        filtered_df = df[df['region'] == selected_region]
+    else:
+        filtered_df = df
+    
+    # Create horizontal bar chart with gradient colors
+    fig = px.bar(
+        filtered_df, 
+        x='values', 
+        y='region',
+        title='Regional Performance Analysis',
+        orientation='h',
+        color='values',
+        color_continuous_scale=['#FF9A9E', '#FECFEF', '#FECFEF', '#A8E6CF', '#88D8C0']
+    )
+    
+    # Custom styling for horizontal bar chart
+    fig.update_layout(
+        title={
+            'text': '<b style="color:#2C3E50; font-size:20px;">🌍 Regional Performance Analysis</b>',
+            'x': 0.5,
+            'xanchor': 'center',
+            'font': {'size': 18, 'family': 'Arial Black'}
+        },
+        xaxis_title='<b>Performance Score</b>',
+        yaxis_title='<b>Geographic Regions</b>',
+        plot_bgcolor='rgba(248,249,250,0.8)',
+        paper_bgcolor='white',
+        font={'family': 'Arial', 'size': 12, 'color': '#2C3E50'},
+        coloraxis_colorbar={
+            'title': '<b>Score</b>',
+            'titlefont': {'size': 14},
+            'tickfont': {'size': 12}
+        },
+        margin=dict(t=80, b=50, l=100, r=50),
+        height=400
+    )
+    
+    # Style the bars
+    fig.update_traces(
+        marker_line_width=1,
+        marker_line_color='white',
+        hovertemplate='<b>%{y}</b><br>Score: %{x:.1f}<extra></extra>',
+        texttemplate='%{x:.1f}',
+        textposition='inside'
+    )
+    
+    # Style axes
+    fig.update_xaxes(
+        tickfont={'size': 12, 'color': '#2C3E50'},
+        title_font={'size': 14, 'color': '#2C3E50'},
+        gridcolor='rgba(128,128,128,0.2)',
+        showgrid=True
+    )
+    fig.update_yaxes(
+        tickfont={'size': 12, 'color': '#2C3E50'},
+        title_font={'size': 14, 'color': '#2C3E50'},
+        categoryorder='total ascending'  # Sort bars by value
+    )
+    
+    return fig
+
+@callback(
+    Output('sunburst-chart', 'figure'),
+    [Input('category-dropdown', 'value'),
+     Input('region-dropdown', 'value')]
+)
+def update_sunburst_chart(selected_categories, selected_region):
+    """Update sunburst chart with custom styling"""
+    # Create sunburst chart
+    fig = go.Figure(go.Sunburst(
+        labels=df['category'].tolist() + df['subcategory'].tolist(),
+        parents=[''] * len(df['category']) + df['category'].tolist(),
+        values=df['values'].tolist() + df['values'].tolist(),
+        branchvalues="total",
+        hovertemplate='<b>%{label}</b><br>Value: %{value}<br>Percentage: %{percentParent}<extra></extra>',
+        maxdepth=2,
+    ))
+    
+    fig.update_layout(
+        title={
+            'text': '<b style="color:#2C3E50; font-size:20px;">☀️ Category Hierarchy Breakdown</b>',
+            'x': 0.5,
+            'xanchor': 'center',
+            'font': {'size': 18, 'family': 'Arial Black'}
+        },
+        font={'family': 'Arial', 'size': 12, 'color': '#2C3E50'},
+        paper_bgcolor='white',
+        margin=dict(t=80, b=20, l=20, r=20),
+        height=500
+    )
+    return fig
+
+@callback(
+    Output('pie-chart', 'figure'),
+    [Input('category-dropdown', 'value'),
+     Input('region-dropdown', 'value')]
+)
+def update_pie_chart(selected_categories, selected_region):
+    """Update pie chart with custom styling"""
+    # Filter data
+    if isinstance(selected_categories, list):
+        filtered_df = df[df['category'].isin(selected_categories)]
+    else:
+        filtered_df = df[df['category'] == selected_categories]
+    
+    # Create pie chart with custom colors
+    fig = px.pie(
+        filtered_df, 
+        values='values', 
+        names='category',
+        title='Category Distribution',
+        color_discrete_sequence=['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7'],
+        hole=0.4  # Makes it a donut chart
+    )
+    
+    fig.update_layout(
+        title={
+            'text': '<b style="color:#2C3E50; font-size:20px;">🍰 Market Share Distribution</b>',
+            'x': 0.5,
+            'xanchor': 'center',
+            'font': {'size': 16, 'family': 'Arial Black'}
+        },
+        font={'family': 'Arial', 'size': 12, 'color': '#2C3E50'},
+        paper_bgcolor='white',
+        showlegend=True,
+        legend=dict(
+            orientation="v",
+            yanchor="middle",
+            y=0.5,
+            xanchor="left",
+            x=1.05,
+            font={'size': 12}
+        ),
+        margin=dict(t=80, b=20, l=20, r=100),
+        height=500
+    )
+    
+    # Update traces for better styling
+    fig.update_traces(
+        textposition='inside',
+        textinfo='percent+label',
+        hovertemplate='<b>%{label}</b><br>Value: %{value}<br>Percentage: %{percent}<extra></extra>',
+        marker=dict(line=dict(color='white', width=2))
+    )
+    
+    return fig
+
+# ============================================
+# RUN THE APP
+# ============================================
+
+if __name__ == '__main__':
+    app.run_server(debug=True)
+
+# ============================================
+# ALTERNATIVE: SEPARATE FILES APPROACH
+# ============================================
+
+"""
+For larger applications, you might want to separate into multiple files:
+
+File structure:
+├── app.py (main app)
+├── pages/
+│   ├── __init__.py
+│   ├── home.py
+│   ├── overview.py
+│   └── analytics.py
+└── components/
+    ├── __init__.py
+    ├── navbar.py
+    └── cards.py
+
+Example pages/overview.py:
+```python
+from dash import dcc, html, Input, Output, callback
+import dash_bootstrap_components as dbc
+import plotly.express as px
+
+def layout():
+    return create_overview_layout()  # Your layout function
+
+# All your overview callbacks would go here
+@callback(...)
+def update_charts(...):
+    pass
+```
+
+Then in main app.py:
+```python
+from pages import overview, home, analytics
+
+@callback(Output('page-content', 'children'),
+          Input('url', 'pathname'))
+def display_page(pathname):
+    if pathname == '/overview':
+        return overview.layout()
+    elif pathname == '/analytics':
+        return analytics.layout()
+    else:
+        return home.layout()
+```
+"""
