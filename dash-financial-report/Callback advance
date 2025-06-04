@@ -1,0 +1,330 @@
+# app.py
+import dash
+import dash_bootstrap_components as dbc
+from dash import dcc, html, Input, Output, State, dash_table
+import pandas as pd
+import plotly.express as px
+import numpy as np
+from datetime import datetime, timedelta
+
+# Dummy DataFrame for malware analysis
+np.random.seed(0)
+malware_names = [f"Malware_{i}" for i in range(1, 21)]
+vendors = ['VendorA', 'VendorB', 'VendorC']
+techniques = ['Phishing', 'Ransomware', 'Trojan', 'Worm']
+infrastructures = ['Cloud', 'On-prem', 'Hybrid']
+sets = ['Set1', 'Set2']
+
+# Generate dates within a reasonable range for demonstration
+dates = pd.date_range(datetime.today() - timedelta(days=365), periods=200).to_pydatetime().tolist() # Increased periods for more data points
+df = pd.DataFrame({
+    'malware_name': np.random.choice(malware_names, 200),
+    'start_date': np.random.choice(dates, 200),
+    'end_date': np.random.choice(dates, 200),
+    'set': np.random.choice(sets, 200),
+    'vendor': np.random.choice(vendors, 200),
+    'techniques': np.random.choice(techniques, 200),
+    'infrastructure': np.random.choice(infrastructures, 200)
+})
+# Ensure start_date is always before or equal to end_date
+df['start_date'], df['end_date'] = np.minimum(df['start_date'], df['end_date']), np.maximum(df['start_date'], df['end_date'])
+
+# Initialize the Dash app
+app = dash.Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP, dbc.icons.FONT_AWESOME])
+app.config.suppress_callback_exceptions = True
+
+# ===== Layout Components =====
+navbar = dbc.NavbarSimple(
+    brand="Malware Analysis Dashboard",
+    brand_href="/", # Link to home
+    color="primary",
+    dark=True,
+    className="mb-4 gradient-navbar",
+    children=[
+        dbc.NavItem(dbc.NavLink("Home", href="/", active="exact")),
+        dbc.NavItem(dbc.NavLink("Analysis Table", href="/analysis", active="exact")),
+    ]
+)
+
+sidebar = html.Div(
+    [
+        html.H4("Filters", className="filter-header"),
+        html.Hr(),
+        dbc.InputGroup(
+            [
+                dbc.InputGroupText(html.I(className="fa-solid fa-bug")),
+                dcc.Dropdown(
+                    id='malware-filter',
+                    options=[{'label': name, 'value': name} for name in df['malware_name'].unique()],
+                    multi=True,
+                    placeholder="Select Malware"
+                )
+            ],
+            className="mb-3"
+        ),
+        dbc.InputGroup(
+            [
+                dbc.InputGroupText(html.I(className="fa-solid fa-user-tie")),
+                dcc.Dropdown(
+                    id='vendor-filter',
+                    options=[{'label': vendor, 'value': vendor} for vendor in df['vendor'].unique()],
+                    multi=True,
+                    placeholder="Select Vendor"
+                )
+            ],
+            className="mb-3"
+        ),
+        dbc.InputGroup(
+            [
+                dbc.InputGroupText(html.I(className="fa-solid fa-screwdriver-wrench")),
+                dcc.Dropdown(
+                    id='technique-filter',
+                    options=[{'label': tech, 'value': tech} for tech in df['techniques'].unique()],
+                    multi=True,
+                    placeholder="Select Technique"
+                )
+            ],
+            className="mb-3"
+        ),
+        dbc.InputGroup(
+            [
+                dbc.InputGroupText(html.I(className="fa-solid fa-server")),
+                dcc.Dropdown(
+                    id='infra-filter',
+                    options=[{'label': infra, 'value': infra} for infra in df['infrastructure'].unique()],
+                    multi=True,
+                    placeholder="Select Infrastructure"
+                )
+            ],
+            className="mb-3"
+        ),
+        html.Label("Date Range:", className="mt-2"),
+        dcc.DatePickerRange(
+            id='date-range',
+            min_date_allowed=df['start_date'].min().date(), # Convert to date object
+            max_date_allowed=df['end_date'].max().date(),   # Convert to date object
+            start_date=df['start_date'].min().date(),      # Convert to date object
+            end_date=df['end_date'].max().date(),          # Convert to date object
+            display_format='YYYY-MM-DD',
+            className="date-picker-custom"
+        )
+    ],
+    className="sidebar p-3"
+)
+
+# ===== Page Layouts =====
+home_layout = html.Div([
+    dbc.Row([
+        dbc.Col(sidebar, width=3, className="sidebar-col"),
+        dbc.Col([
+            dbc.Row([
+                dbc.Col(dbc.Card(dcc.Graph(id='technique-distribution'), body=True, className="shadow-sm h-100"), lg=6, md=12, className="mb-4"),
+                dbc.Col(dbc.Card(dcc.Graph(id='time-trend'), body=True, className="shadow-sm h-100"), lg=6, md=12, className="mb-4")
+            ]),
+            dbc.Row([
+                dbc.Col(dbc.Card(dcc.Graph(id='vendor-distribution'), body=True, className="shadow-sm"), lg=12, md=12, className="mb-4")
+            ])
+        ], width=9)
+    ])
+])
+
+
+
+analysis_layout = html.Div([
+    dbc.Row([
+        dbc.Col(sidebar, width=3, className="sidebar-col"),
+        dbc.Col([
+            html.H3("Malware Data Table", className="mb-3 text-center"),
+            dbc.Card(
+                dash_table.DataTable(
+                    id='data-table',
+                    columns=[{"name": i, "id": i} for i in df.columns],
+                    page_size=10,
+                    sort_action="native",
+                    filter_action="native",
+                    export_format="csv",
+                    # Apply styles directly using DataTable's properties
+                    style_table={
+                        'overflowX': 'auto',
+                        'minWidth': '100%', # Ensure table takes full width
+                        'borderCollapse': 'collapse', # From modern-table
+                        'marginBottom': '20px' # From modern-table
+                    },
+                    style_cell={
+                        'textAlign': 'left',
+                        'padding': '12px 15px', # From modern-table
+                        'borderBottom': '1px solid #dee2e6', # From modern-table
+                        'fontFamily': 'inherit' # Ensure font consistency
+                    },
+                    style_header={
+                        'backgroundColor': 'rgb(230, 230, 230)', # From modern-table
+                        'fontWeight': 'bold', # From modern-table
+                        'color': '#495057', # From modern-table
+                        'textAlign': 'left', # From modern-table
+                        'padding': '12px 15px', # Consistent with cells
+                    },
+                    # Use style_data_conditional for hover effect
+                    style_data_conditional=[
+                        {
+                            'if': {'state': 'active'}, # cell is selected
+                            'backgroundColor': '#e6f7ff',
+                            'border': '1px solid #007bff'
+                        },
+                        {
+                            'if': {'row_hover': True}, # hover effect
+                            'backgroundColor': '#f2f2f2' # From modern-table
+                        }
+                    ],
+                    # No className directly on DataTable
+                ),
+                body=True, className="shadow-sm mb-4" # Apply card styling here
+            ),
+            html.H3("Malware Activity Scatter Plot", className="mb-3 text-center"),
+            dbc.Card(dcc.Graph(id='date-scatter'), body=True, className="shadow-sm")
+        ], width=9)
+    ])
+])
+# ===== App Layout =====
+app.layout = html.Div([
+    dcc.Location(id='url', refresh=False),
+    navbar,
+    html.Div(id='page-content')
+])
+
+# ===== Callbacks =====
+# Callback for page routing
+@app.callback(
+    Output('page-content', 'children'),
+    [Input('url', 'pathname')]
+)
+def display_page(pathname):
+    if pathname == '/analysis':
+        return analysis_layout
+    return home_layout # Default to home_layout for '/' and other paths
+
+# Callback to update figures on the HOME page
+@app.callback(
+    [Output('technique-distribution', 'figure'),
+     Output('time-trend', 'figure'),
+     Output('vendor-distribution', 'figure')], # Only outputs for home_layout
+    [Input('malware-filter', 'value'),
+     Input('vendor-filter', 'value'),
+     Input('technique-filter', 'value'),
+     Input('infra-filter', 'value'),
+     Input('date-range', 'start_date'),
+     Input('date-range', 'end_date')],
+    [State('url', 'pathname')] # Add State to know current page
+)
+def update_home_figures(malware_filter, vendor_filter, technique_filter, infra_filter, start_date, end_date, pathname):
+    # Only update these figures if we are on the home page
+    if pathname != '/': # or pathname != None, check how your default path is handled
+        return dash.no_update, dash.no_update, dash.no_update
+
+    filtered_df = df.copy()
+
+    # Apply filters
+    if malware_filter:
+        filtered_df = filtered_df[filtered_df['malware_name'].isin(malware_filter)]
+    if vendor_filter:
+        filtered_df = filtered_df[filtered_df['vendor'].isin(vendor_filter)]
+    if technique_filter:
+        filtered_df = filtered_df[filtered_df['techniques'].isin(technique_filter)]
+    if infra_filter:
+        filtered_df = filtered_df[filtered_df['infrastructure'].isin(infra_filter)]
+
+    start_date_obj = datetime.strptime(start_date, '%Y-%m-%d') if start_date else None
+    end_date_obj = datetime.strptime(end_date, '%Y-%m-%d') if end_date else None
+
+    if start_date_obj and end_date_obj:
+        filtered_df = filtered_df[
+            (filtered_df['start_date'] >= start_date_obj) &
+            (filtered_df['end_date'] <= end_date_obj)
+        ]
+    elif start_date_obj:
+        filtered_df = filtered_df[filtered_df['start_date'] >= start_date_obj]
+    elif end_date_obj:
+        filtered_df = filtered_df[filtered_df['end_date'] <= end_date_obj]
+
+    tech_fig = px.bar(
+        filtered_df.groupby('techniques').size().reset_index(name='count'),
+        x='techniques', y='count', title='Malware Techniques Distribution',
+        labels={'techniques': 'Malware Technique', 'count': 'Number of Occurrences'},
+        color='techniques', template='plotly_white'
+    )
+    tech_fig.update_layout(xaxis_title="Technique", yaxis_title="Count", showlegend=False)
+
+    time_df = filtered_df.groupby(pd.to_datetime(filtered_df['start_date']).dt.date).size().reset_index(name='count')
+    time_df.columns = ['date', 'count']
+    time_fig = px.line(
+        time_df, x='date', y='count', title='Malware Activity Over Time (Start Date)',
+        labels={'date': 'Date', 'count': 'Number of Malware Events'},
+        template='plotly_white'
+    )
+    time_fig.update_traces(mode='lines+markers')
+    time_fig.update_layout(xaxis_title="Date", yaxis_title="Count")
+
+    vendor_fig = px.pie(
+        filtered_df, names='vendor', title='Vendor Distribution', hole=0.3, template='plotly_white'
+    )
+    vendor_fig.update_traces(textposition='inside', textinfo='percent+label')
+
+    return tech_fig, time_fig, vendor_fig
+
+
+# Callback to update the DataTable and Scatter plot on the ANALYSIS page
+@app.callback(
+    [Output('data-table', 'data'),
+     Output('date-scatter', 'figure')],
+    [Input('malware-filter', 'value'),
+     Input('vendor-filter', 'value'),
+     Input('technique-filter', 'value'),
+     Input('infra-filter', 'value'),
+     Input('date-range', 'start_date'),
+     Input('date-range', 'end_date')],
+    [State('url', 'pathname')] # Add State to know current page
+)
+def update_analysis_components(malware_filter, vendor_filter, technique_filter, infra_filter, start_date, end_date, pathname):
+    # Only update these components if we are on the analysis page
+    if pathname != '/analysis':
+        return dash.no_update, dash.no_update
+
+    filtered_df = df.copy()
+
+    # Apply filters (same filtering logic)
+    if malware_filter:
+        filtered_df = filtered_df[filtered_df['malware_name'].isin(malware_filter)]
+    if vendor_filter:
+        filtered_df = filtered_df[filtered_df['vendor'].isin(vendor_filter)]
+    if technique_filter:
+        filtered_df = filtered_df[filtered_df['techniques'].isin(technique_filter)]
+    if infra_filter:
+        filtered_df = filtered_df[filtered_df['infrastructure'].isin(infra_filter)]
+
+    start_date_obj = datetime.strptime(start_date, '%Y-%m-%d') if start_date else None
+    end_date_obj = datetime.strptime(end_date, '%Y-%m-%d') if end_date else None
+
+    if start_date_obj and end_date_obj:
+        filtered_df = filtered_df[
+            (filtered_df['start_date'] >= start_date_obj) &
+            (filtered_df['end_date'] <= end_date_obj)
+        ]
+    elif start_date_obj:
+        filtered_df = filtered_df[filtered_df['start_date'] >= start_date_obj]
+    elif end_date_obj:
+        filtered_df = filtered_df[filtered_df['end_date'] <= end_date_obj]
+
+    # Create figures specific to analysis layout
+    scatter_fig = px.scatter(
+        filtered_df, x='start_date', y='end_date', color='vendor',
+        hover_data=['malware_name', 'techniques', 'infrastructure'],
+        title='Malware Start vs. End Dates',
+        labels={'start_date': 'Start Date', 'end_date': 'End Date'},
+        template='plotly_white'
+    )
+    scatter_fig.update_layout(xaxis_title="Start Date", yaxis_title="End Date")
+
+    return filtered_df.to_dict('records'), scatter_fig
+
+
+if __name__ == '__main__':
+    app.run(debug=True)
