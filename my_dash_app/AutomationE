@@ -1,0 +1,152 @@
+
+import os
+import tkinter as tk
+from tkinter import filedialog, messagebox
+from tkinter import ttk
+import threading
+import PyPDF2
+import pandas as pd
+import rarfile
+import shutil
+from PIL import Image
+import tempfile
+
+class PDFKeywordScannerApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("PDF & Archive Keyword Scanner")
+
+        self.results_data = []
+        self.other_data = []
+
+        # Keyword Entry
+        self.keyword_label = ttk.Label(root, text="Enter Keyword:")
+        self.keyword_label.pack()
+        self.keyword_entry = ttk.Entry(root, width=50)
+        self.keyword_entry.pack(pady=5)
+
+        # Browse Button
+        self.browse_button = ttk.Button(root, text="Select Folder", command=self.browse_folder)
+        self.browse_button.pack(pady=5)
+
+        # Export Button
+        self.export_button = ttk.Button(root, text="Export to Excel", command=self.export_results)
+        self.export_button.pack(pady=5)
+
+        # Results Table
+        self.tree = ttk.Treeview(root, columns=("File Name", "Page Number", "Text Preview"), show="headings")
+        self.tree.heading("File Name", text="File Name")
+        self.tree.heading("Page Number", text="Page Number")
+        self.tree.heading("Text Preview", text="Text Preview")
+        self.tree.column("File Name", width=150)
+        self.tree.column("Page Number", width=100)
+        self.tree.column("Text Preview", width=400)
+        self.tree.pack(expand=True, fill=tk.BOTH, padx=10, pady=10)
+
+    def browse_folder(self):
+        folder_path = filedialog.askdirectory()
+        if folder_path:
+            keyword = self.keyword_entry.get().strip()
+            if not keyword:
+                messagebox.showwarning("Input Error", "Please enter a keyword to scan.")
+                return
+            self.tree.delete(*self.tree.get_children())
+            self.results_data.clear()
+            self.other_data.clear()
+            threading.Thread(target=self.scan_folder_contents, args=(folder_path, [keyword]), daemon=True).start()
+
+    def scan_folder_contents(self, folder_path, keywords):
+        temp_extract_path = os.path.join(tempfile.gettempdir(), "rar_extracted_files")
+        if os.path.exists(temp_extract_path):
+            shutil.rmtree(temp_extract_path)
+        os.makedirs(temp_extract_path)
+
+        for item in os.listdir(folder_path):
+            full_path = os.path.join(folder_path, item)
+            if item.lower().endswith(".rar"):
+                try:
+                    rf = rarfile.RarFile(full_path)
+                    rf.extractall(temp_extract_path)
+                except Exception as e:
+                    print(f"Failed to extract {item}: {e}")
+            elif item.lower().endswith(".pdf"):
+                shutil.copy(full_path, temp_extract_path)
+
+        self.scan_pdf_folder(temp_extract_path, keywords)
+        self.scan_non_pdf_files(temp_extract_path)
+
+    def scan_pdf_folder(self, folder_path, keywords):
+        for root, dirs, files in os.walk(folder_path):
+            for file in files:
+                if file.lower().endswith(".pdf"):
+                    file_path = os.path.join(root, file)
+                    try:
+                        with open(file_path, 'rb') as f:
+                            reader = PyPDF2.PdfReader(f)
+                            for i, page in enumerate(reader.pages):
+                                text = page.extract_text()
+                                if text:
+                                    for keyword in keywords:
+                                        if keyword.lower() in text.lower():
+                                            preview = text.strip().replace('\n', ' ')[:100]
+                                            self.results_data.append({
+                                                "File Name": file,
+                                                "Page Number": i + 1,
+                                                "Text Preview": preview
+                                            })
+                                            self.tree.insert("", "end", values=(file, i + 1, preview))
+                    except Exception as e:
+                        print(f"Error reading {file_path}: {e}")
+
+    def scan_non_pdf_files(self, path):
+        images_path = os.path.join(path, "extracted_images")
+        os.makedirs(images_path, exist_ok=True)
+
+        for root, dirs, files in os.walk(path):
+            for file in files:
+                filepath = os.path.join(root, file)
+                ext = file.lower().split('.')[-1]
+                if ext in ['jpg', 'jpeg', 'png']:
+                    try:
+                        img = Image.open(filepath)
+                        img.save(os.path.join(images_path, file))
+                        self.other_data.append({'Type': 'Image', 'File': file, 'Path': filepath})
+                    except Exception as e:
+                        print(f"Error saving image {file}: {e}")
+                elif ext == 'eml':
+                    self.other_data.append({'Type': 'Email', 'File': file, 'Path': filepath})
+                elif ext == 'bin':
+                    self.other_data.append({'Type': 'Binary', 'File': file, 'Path': filepath})
+                elif ext not in ['pdf']:
+                    self.other_data.append({'Type': 'Other', 'File': file, 'Path': filepath})
+
+    def export_results(self):
+        if not self.results_data:
+            messagebox.showinfo("Export", "No results to export.")
+            return
+
+        file_path = filedialog.asksaveasfilename(
+            defaultextension=".xlsx",
+            filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")]
+        )
+        if not file_path:
+            return
+
+        try:
+            with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
+                df = pd.DataFrame(self.results_data)
+                df.to_excel(writer, sheet_name='PDF_Results', index=False)
+
+                if self.other_data:
+                    df_other = pd.DataFrame(self.other_data)
+                    df_other.to_excel(writer, sheet_name='Other_Files', index=False)
+
+            messagebox.showinfo("Export", f"Results exported to {file_path}")
+        except Exception as e:
+            messagebox.showerror("Export Error", f"Failed to export: {e}")
+
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = PDFKeywordScannerApp(root)
+    root.mainloop()
