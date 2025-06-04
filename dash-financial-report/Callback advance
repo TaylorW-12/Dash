@@ -166,14 +166,10 @@ analysis_layout = html.Div([
                     # Use style_data_conditional for hover effect
                     style_data_conditional=[
                         {
-                            'if': {'state': 'active'}, # cell is selected
-                            'backgroundColor': '#e6f7ff',
-                            'border': '1px solid #007bff'
+                            'if': {'row_index': 'odd'},
+                                'backgroundColor': 'rgb(248, 248, 248)'
                         },
-                        {
-                            'if': {'row_hover': True}, # hover effect
-                            'backgroundColor': '#f2f2f2' # From modern-table
-                        }
+                       
                     ],
                     # No className directly on DataTable
                 ),
