@@ -1,0 +1,756 @@
+import os
+import zipfile
+import rarfile
+import shutil
+from pathlib import Path
+import mimetypes
+from PIL import Image
+import PyPDF2
+import docx
+from docx import Document
+import openpyxl
+from openpyxl import load_workbook
+import json
+import xml.etree.ElementTree as ET
+import csv
+import sqlite3
+import tempfile
+import logging
+from typing import List, Dict, Any
+import magic  # python-magic for file type detection
+import re
+from collections import defaultdict
+import chardet  # for encoding detection
+
+class RARAnalyzer:
+    def __init__(self, rar_path: str, output_dir: str = None):
+        self.rar_path = rar_path
+        self.output_dir = output_dir or f"{rar_path}_extracted"
+        self.extracted_files = []
+        self.embedded_content = []
+        
+        # Setup logging
+        logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+        self.logger = logging.getLogger(__name__)
+        
+        # Create output directory
+        Path(self.output_dir).mkdir(exist_ok=True)
+        
+    def extract_rar(self):
+        """Extract RAR file contents"""
+        try:
+            with rarfile.RarFile(self.rar_path) as rf:
+                rf.extractall(self.output_dir)
+                self.logger.info(f"RAR extracted to: {self.output_dir}")
+                return True
+        except Exception as e:
+            self.logger.error(f"Error extracting RAR: {e}")
+            return False
+    
+    def scan_directory(self, directory: str) -> List[Dict[str, Any]]:
+        """Recursively scan directory and catalog all files"""
+        files_info = []
+        
+        for root, dirs, files in os.walk(directory):
+            for file in files:
+                file_path = os.path.join(root, file)
+                relative_path = os.path.relpath(file_path, directory)
+                
+                try:
+                    # Get file info
+                    file_stat = os.stat(file_path)
+                    file_info = {
+                        'name': file,
+                        'path': file_path,
+                        'relative_path': relative_path,
+                        'size': file_stat.st_size,
+                        'extension': Path(file).suffix.lower(),
+                        'mime_type': mimetypes.guess_type(file_path)[0],
+                        'embedded_content': []
+                    }
+                    
+                    # Detect file type using magic
+                    try:
+                        file_info['detected_type'] = magic.from_file(file_path, mime=True)
+                    except:
+                        file_info['detected_type'] = 'unknown'
+                    
+                    files_info.append(file_info)
+                    
+                except Exception as e:
+                    self.logger.error(f"Error processing file {file_path}: {e}")
+        
+        return files_info
+    
+    def extract_from_pdf(self, file_path: str) -> List[Dict[str, Any]]:
+        """Extract images and attachments from PDF files"""
+        embedded_items = []
+        
+        try:
+            with open(file_path, 'rb') as file:
+                pdf_reader = PyPDF2.PdfReader(file)
+                
+                # Extract text content info
+                text_content = ""
+                for page in pdf_reader.pages:
+                    text_content += page.extract_text()
+                
+                if text_content.strip():
+                    embedded_items.append({
+                        'type': 'text_content',
+                        'description': f'Text content ({len(text_content)} characters)',
+                        'location': 'PDF pages',
+                        'extractable': True
+                    })
+                
+                # Check for embedded files (this is limited in PyPDF2)
+                if hasattr(pdf_reader, 'attachments'):
+                    for attachment in pdf_reader.attachments:
+                        embedded_items.append({
+                            'type': 'attachment',
+                            'description': f'Embedded file: {attachment}',
+                            'location': 'PDF attachment',
+                            'extractable': True
+                        })
+        
+        except Exception as e:
+            self.logger.error(f"Error extracting from PDF {file_path}: {e}")
+        
+        return embedded_items
+    
+    def extract_from_docx(self, file_path: str) -> List[Dict[str, Any]]:
+        """Extract images and embedded content from DOCX files"""
+        embedded_items = []
+        
+        try:
+            doc = Document(file_path)
+            
+            # Extract images
+            for rel in doc.part.rels.values():
+                if "image" in rel.target_ref:
+                    embedded_items.append({
+                        'type': 'image',
+                        'description': f'Embedded image: {rel.target_ref}',
+                        'location': 'DOCX embedded',
+                        'extractable': True,
+                        'target_ref': rel.target_ref
+                    })
+            
+            # Extract text content info
+            full_text = []
+            for paragraph in doc.paragraphs:
+                if paragraph.text.strip():
+                    full_text.append(paragraph.text)
+            
+            if full_text:
+                embedded_items.append({
+                    'type': 'text_content',
+                    'description': f'Document text ({len(" ".join(full_text))} characters)',
+                    'location': 'DOCX paragraphs',
+                    'extractable': True
+                })
+        
+        except Exception as e:
+            self.logger.error(f"Error extracting from DOCX {file_path}: {e}")
+        
+        return embedded_items
+    
+    def extract_from_xlsx(self, file_path: str) -> List[Dict[str, Any]]:
+        """Extract embedded content from Excel files"""
+        embedded_items = []
+        
+        try:
+            workbook = load_workbook(file_path)
+            
+            # Check for images in worksheets
+            for sheet_name in workbook.sheetnames:
+                sheet = workbook[sheet_name]
+                
+                # Check for embedded images
+                if hasattr(sheet, '_images') and sheet._images:
+                    for img in sheet._images:
+                        embedded_items.append({
+                            'type': 'image',
+                            'description': f'Embedded image in sheet: {sheet_name}',
+                            'location': f'Excel sheet: {sheet_name}',
+                            'extractable': True
+                        })
+                
+                # Get data summary
+                max_row = sheet.max_row
+                max_col = sheet.max_column
+                if max_row > 1 or max_col > 1:
+                    embedded_items.append({
+                        'type': 'data_content',
+                        'description': f'Spreadsheet data: {max_row} rows, {max_col} columns',
+                        'location': f'Excel sheet: {sheet_name}',
+                        'extractable': True
+                    })
+        
+        except Exception as e:
+            self.logger.error(f"Error extracting from Excel {file_path}: {e}")
+        
+        return embedded_items
+    
+    def extract_from_zip(self, file_path: str) -> List[Dict[str, Any]]:
+        """Extract content list from ZIP files"""
+        embedded_items = []
+        
+        try:
+            with zipfile.ZipFile(file_path, 'r') as zip_file:
+                for file_info in zip_file.filelist:
+                    embedded_items.append({
+                        'type': 'archived_file',
+                        'description': f'File: {file_info.filename} ({file_info.file_size} bytes)',
+                        'location': 'ZIP archive',
+                        'extractable': True,
+                        'filename': file_info.filename,
+                        'size': file_info.file_size
+                    })
+        
+        except Exception as e:
+            self.logger.error(f"Error extracting from ZIP {file_path}: {e}")
+        
+        return embedded_items
+    
+    def extract_embedded_content(self, file_info: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Extract embedded content based on file type"""
+        file_path = file_info['path']
+        extension = file_info['extension']
+        embedded_content = []
+        
+        try:
+            if extension == '.pdf':
+                embedded_content = self.extract_from_pdf(file_path)
+            elif extension == '.docx':
+                embedded_content = self.extract_from_docx(file_path)
+            elif extension in ['.xlsx', '.xls']:
+                embedded_content = self.extract_from_xlsx(file_path)
+            elif extension == '.zip':
+                embedded_content = self.extract_from_zip(file_path)
+            elif extension in ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff']:
+                # For image files, get basic metadata
+                try:
+                    with Image.open(file_path) as img:
+                        embedded_content.append({
+                            'type': 'image_metadata',
+                            'description': f'Image: {img.format}, {img.size}, {img.mode}',
+                            'location': 'Image file',
+                            'extractable': False
+                        })
+                        
+                        # Check for EXIF data
+                        if hasattr(img, '_getexif') and img._getexif():
+                            embedded_content.append({
+                                'type': 'exif_data',
+                                'description': 'EXIF metadata available',
+                                'location': 'Image EXIF',
+                                'extractable': True
+                            })
+                except:
+                    pass
+        
+        except Exception as e:
+            self.logger.error(f"Error extracting embedded content from {file_path}: {e}")
+        
+        return embedded_content
+    
+    def extract_text_content(self, file_info: Dict[str, Any]) -> str:
+        """Extract searchable text content from various file types"""
+        file_path = file_info['path']
+        extension = file_info['extension']
+        text_content = ""
+        
+        try:
+            if extension == '.pdf':
+                text_content = self._extract_text_from_pdf(file_path)
+            elif extension == '.docx':
+                text_content = self._extract_text_from_docx(file_path)
+            elif extension in ['.xlsx', '.xls']:
+                text_content = self._extract_text_from_excel(file_path)
+            elif extension == '.txt':
+                text_content = self._extract_text_from_txt(file_path)
+            elif extension in ['.csv']:
+                text_content = self._extract_text_from_csv(file_path)
+            elif extension in ['.xml', '.html', '.htm']:
+                text_content = self._extract_text_from_xml_html(file_path)
+            elif extension == '.json':
+                text_content = self._extract_text_from_json(file_path)
+            elif extension in ['.py', '.js', '.css', '.sql', '.md', '.log']:
+                text_content = self._extract_text_from_txt(file_path)  # Treat as text
+            else:
+                # Try to extract as plain text for unknown types
+                text_content = self._extract_text_from_unknown(file_path)
+        
+        except Exception as e:
+            self.logger.error(f"Error extracting text from {file_path}: {e}")
+        
+        return text_content
+    
+    def _extract_text_from_pdf(self, file_path: str) -> str:
+        """Extract text from PDF"""
+        text = ""
+        try:
+            with open(file_path, 'rb') as file:
+                pdf_reader = PyPDF2.PdfReader(file)
+                for page in pdf_reader.pages:
+                    text += page.extract_text() + "\n"
+        except Exception as e:
+            self.logger.error(f"Error extracting text from PDF {file_path}: {e}")
+        return text
+    
+    def _extract_text_from_docx(self, file_path: str) -> str:
+        """Extract text from DOCX"""
+        text = ""
+        try:
+            doc = Document(file_path)
+            for paragraph in doc.paragraphs:
+                text += paragraph.text + "\n"
+            
+            # Extract text from tables
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        text += cell.text + " "
+                    text += "\n"
+        except Exception as e:
+            self.logger.error(f"Error extracting text from DOCX {file_path}: {e}")
+        return text
+    
+    def _extract_text_from_excel(self, file_path: str) -> str:
+        """Extract text from Excel files"""
+        text = ""
+        try:
+            workbook = load_workbook(file_path, data_only=True)
+            for sheet_name in workbook.sheetnames:
+                sheet = workbook[sheet_name]
+                text += f"Sheet: {sheet_name}\n"
+                
+                for row in sheet.iter_rows(values_only=True):
+                    row_text = []
+                    for cell in row:
+                        if cell is not None:
+                            row_text.append(str(cell))
+                    text += " ".join(row_text) + "\n"
+        except Exception as e:
+            self.logger.error(f"Error extracting text from Excel {file_path}: {e}")
+        return text
+    
+    def _extract_text_from_txt(self, file_path: str) -> str:
+        """Extract text from plain text files with encoding detection"""
+        text = ""
+        try:
+            # Detect encoding
+            with open(file_path, 'rb') as file:
+                raw_data = file.read()
+                encoding = chardet.detect(raw_data)['encoding'] or 'utf-8'
+            
+            # Read with detected encoding
+            with open(file_path, 'r', encoding=encoding, errors='ignore') as file:
+                text = file.read()
+        except Exception as e:
+            self.logger.error(f"Error extracting text from text file {file_path}: {e}")
+        return text
+    
+    def _extract_text_from_csv(self, file_path: str) -> str:
+        """Extract text from CSV files"""
+        text = ""
+        try:
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as file:
+                csv_reader = csv.reader(file)
+                for row in csv_reader:
+                    text += " ".join(row) + "\n"
+        except Exception as e:
+            self.logger.error(f"Error extracting text from CSV {file_path}: {e}")
+        return text
+    
+    def _extract_text_from_xml_html(self, file_path: str) -> str:
+        """Extract text from XML/HTML files"""
+        text = ""
+        try:
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as file:
+                content = file.read()
+                # Remove HTML/XML tags using regex
+                text = re.sub(r'<[^>]+>', ' ', content)
+                # Clean up whitespace
+                text = re.sub(r'\s+', ' ', text).strip()
+        except Exception as e:
+            self.logger.error(f"Error extracting text from XML/HTML {file_path}: {e}")
+        return text
+    
+    def _extract_text_from_json(self, file_path: str) -> str:
+        """Extract text from JSON files"""
+        text = ""
+        try:
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as file:
+                data = json.load(file)
+                text = json.dumps(data, indent=2)
+        except Exception as e:
+            self.logger.error(f"Error extracting text from JSON {file_path}: {e}")
+        return text
+    
+    def _extract_text_from_unknown(self, file_path: str) -> str:
+        """Try to extract text from unknown file types"""
+        text = ""
+        try:
+            # Try to read as text with encoding detection
+            with open(file_path, 'rb') as file:
+                raw_data = file.read(1024)  # Read first 1KB
+                encoding = chardet.detect(raw_data)['encoding']
+                
+                if encoding and encoding.lower() not in ['binary', 'application/octet-stream']:
+                    with open(file_path, 'r', encoding=encoding, errors='ignore') as text_file:
+                        text = text_file.read()
+        except Exception as e:
+            self.logger.debug(f"Could not extract text from unknown file type {file_path}: {e}")
+        return text
+    
+    def search_files(self, keywords: List[str], case_sensitive: bool = False, 
+                    whole_words: bool = False, file_types: List[str] = None) -> Dict[str, Any]:
+        """
+        Search for keywords across all extracted files
+        
+        Args:
+            keywords: List of keywords to search for
+            case_sensitive: Whether search should be case sensitive
+            whole_words: Whether to match whole words only
+            file_types: List of file extensions to limit search to (e.g., ['.txt', '.pdf'])
+        
+        Returns:
+            Dictionary containing search results
+        """
+        if not hasattr(self, 'files_info') or not self.files_info:
+            self.logger.error("No files loaded. Run analyze_and_extract() first.")
+            return {}
+        
+        search_results = {
+            'keywords': keywords,
+            'case_sensitive': case_sensitive,
+            'whole_words': whole_words,
+            'file_types_filter': file_types,
+            'total_matches': 0,
+            'files_with_matches': 0,
+            'results': []
+        }
+        
+        # Prepare search patterns
+        search_patterns = []
+        for keyword in keywords:
+            if whole_words:
+                pattern = r'\b' + re.escape(keyword) + r'\b'
+            else:
+                pattern = re.escape(keyword)
+            
+            flags = 0 if case_sensitive else re.IGNORECASE
+            search_patterns.append(re.compile(pattern, flags))
+        
+        # Search through files
+        for file_info in self.files_info:
+            # Skip if file type filter is specified and doesn't match
+            if file_types and file_info['extension'] not in file_types:
+                continue
+            
+            # Extract text content
+            text_content = self.extract_text_content(file_info)
+            if not text_content.strip():
+                continue
+            
+            # Search for keywords
+            file_matches = []
+            total_file_matches = 0
+            
+            for i, (keyword, pattern) in enumerate(zip(keywords, search_patterns)):
+                matches = list(pattern.finditer(text_content))
+                
+                if matches:
+                    keyword_matches = []
+                    for match in matches:
+                        # Get context around the match
+                        start = max(0, match.start() - 50)
+                        end = min(len(text_content), match.end() + 50)
+                        context = text_content[start:end].replace('\n', ' ').strip()
+                        
+                        # Find line number
+                        line_num = text_content[:match.start()].count('\n') + 1
+                        
+                        keyword_matches.append({
+                            'position': match.start(),
+                            'line_number': line_num,
+                            'context': context,
+                            'matched_text': match.group()
+                        })
+                    
+                    file_matches.append({
+                        'keyword': keyword,
+                        'count': len(matches),
+                        'matches': keyword_matches
+                    })
+                    
+                    total_file_matches += len(matches)
+            
+            if file_matches:
+                search_results['results'].append({
+                    'file': file_info,
+                    'total_matches': total_file_matches,
+                    'keyword_matches': file_matches,
+                    'text_length': len(text_content)
+                })
+                
+                search_results['total_matches'] += total_file_matches
+                search_results['files_with_matches'] += 1
+        
+        return search_results
+    
+    def print_search_results(self, search_results: Dict[str, Any], max_context_length: int = 100):
+        """Print formatted search results"""
+        print("\n" + "="*80)
+        print("SEARCH RESULTS")
+        print("="*80)
+        
+        print(f"Keywords: {', '.join(search_results['keywords'])}")
+        print(f"Case Sensitive: {search_results['case_sensitive']}")
+        print(f"Whole Words Only: {search_results['whole_words']}")
+        if search_results['file_types_filter']:
+            print(f"File Types Filter: {', '.join(search_results['file_types_filter'])}")
+        
+        print(f"\nSummary:")
+        print(f"  Total Matches: {search_results['total_matches']}")
+        print(f"  Files with Matches: {search_results['files_with_matches']}")
+        
+        if not search_results['results']:
+            print("\nNo matches found.")
+            return
+        
+        print(f"\nDetailed Results:")
+        print("-" * 80)
+        
+        for result in search_results['results']:
+            file_info = result['file']
+            print(f"\nFile: {file_info['name']}")
+            print(f"Path: {file_info['relative_path']}")
+            print(f"Type: {file_info['extension']}")
+            print(f"Total Matches: {result['total_matches']}")
+            
+            for keyword_match in result['keyword_matches']:
+                keyword = keyword_match['keyword']
+                count = keyword_match['count']
+                print(f"\n  Keyword: '{keyword}' ({count} matches)")
+                
+                for i, match in enumerate(keyword_match['matches'][:5]):  # Show max 5 matches per keyword
+                    context = match['context']
+                    if len(context) > max_context_length:
+                        context = context[:max_context_length] + "..."
+                    
+                    print(f"    Match {i+1}: Line {match['line_number']}")
+                    print(f"    Context: ...{context}...")
+                
+                if len(keyword_match['matches']) > 5:
+                    print(f"    ... and {len(keyword_match['matches']) - 5} more matches")
+    
+    def save_search_results(self, search_results: Dict[str, Any], output_file: str = None):
+        """Save search results to JSON file"""
+        if not output_file:
+            keywords_str = "_".join(search_results['keywords'][:3])  # Use first 3 keywords
+            output_file = f"search_results_{keywords_str}.json"
+        
+        # Convert to JSON-serializable format
+        json_results = json.loads(json.dumps(search_results, default=str))
+        
+        with open(output_file, 'w', encoding='utf-8') as f:
+            json.dump(json_results, f, indent=2, ensure_ascii=False)
+        
+        self.logger.info(f"Search results saved to: {output_file}")
+    
+    def analyze_and_extract(self) -> Dict[str, Any]:
+        """Main method to analyze RAR file and extract all content"""
+        results = {
+            'rar_file': self.rar_path,
+            'extraction_successful': False,
+            'total_files': 0,
+            'files': [],
+            'summary': {
+                'file_types': {},
+                'total_embedded_items': 0,
+                'embedded_types': {}
+            }
+        }
+        
+        # Extract RAR file
+        if not self.extract_rar():
+            return results
+        
+        results['extraction_successful'] = True
+        
+        # Scan all extracted files
+        files_info = self.scan_directory(self.output_dir)
+        results['total_files'] = len(files_info)
+        
+        # Process each file
+        for file_info in files_info:
+            # Extract embedded content
+            embedded_content = self.extract_embedded_content(file_info)
+            file_info['embedded_content'] = embedded_content
+            
+            # Update summary statistics
+            ext = file_info['extension'] or 'no_extension'
+            results['summary']['file_types'][ext] = results['summary']['file_types'].get(ext, 0) + 1
+            
+            results['summary']['total_embedded_items'] += len(embedded_content)
+            
+            for item in embedded_content:
+                item_type = item['type']
+                results['summary']['embedded_types'][item_type] = results['summary']['embedded_types'].get(item_type, 0) + 1
+            
+            results['files'].append(file_info)
+        
+        # Store files info for search functionality
+        self.files_info = files_info
+        
+        return results
+    
+    def save_results(self, results: Dict[str, Any], output_file: str = None):
+        """Save analysis results to JSON file"""
+        if not output_file:
+            output_file = f"{self.rar_path}_analysis.json"
+        
+        # Convert Path objects to strings for JSON serialization
+        json_results = json.loads(json.dumps(results, default=str))
+        
+        with open(output_file, 'w', encoding='utf-8') as f:
+            json.dump(json_results, f, indent=2, ensure_ascii=False)
+        
+        self.logger.info(f"Results saved to: {output_file}")
+    
+    def print_summary(self, results: Dict[str, Any]):
+        """Print a formatted summary of the analysis"""
+        print("\n" + "="*60)
+        print(f"RAR FILE ANALYSIS SUMMARY")
+        print("="*60)
+        print(f"RAR File: {results['rar_file']}")
+        print(f"Extraction Successful: {results['extraction_successful']}")
+        print(f"Total Files Found: {results['total_files']}")
+        
+        print(f"\nFile Types:")
+        for ext, count in results['summary']['file_types'].items():
+            print(f"  {ext}: {count} files")
+        
+        print(f"\nEmbedded Content Summary:")
+        print(f"Total Embedded Items: {results['summary']['total_embedded_items']}")
+        for content_type, count in results['summary']['embedded_types'].items():
+            print(f"  {content_type}: {count} items")
+        
+        print(f"\nDetailed File List:")
+        print("-" * 60)
+        
+        for file_info in results['files']:
+            print(f"\nFile: {file_info['name']}")
+            print(f"  Path: {file_info['relative_path']}")
+            print(f"  Size: {file_info['size']} bytes")
+            print(f"  Type: {file_info['extension']} ({file_info['detected_type']})")
+            
+            if file_info['embedded_content']:
+                print(f"  Embedded Content:")
+                for item in file_info['embedded_content']:
+                    print(f"    - {item['type']}: {item['description']}")
+                    print(f"      Location: {item['location']}")
+                    print(f"      Extractable: {item['extractable']}")
+
+
+# Usage example
+def main():
+    """Main function to demonstrate usage"""
+    import sys
+    
+    if len(sys.argv) < 2:
+        print("Usage: python rar_analyzer.py <path_to_rar_file> [output_directory]")
+        sys.exit(1)
+    
+    rar_path = sys.argv[1]
+    output_dir = sys.argv[2] if len(sys.argv) > 2 else None
+    
+    # Create analyzer instance
+    analyzer = RARAnalyzer(rar_path, output_dir)
+    
+    # Perform analysis
+    print("Starting RAR file analysis...")
+    results = analyzer.analyze_and_extract()
+    
+    # Print summary
+    analyzer.print_summary(results)
+    
+    # Save results
+    analyzer.save_results(results)
+    
+    print(f"\nAnalysis complete! Results saved and extraction directory: {analyzer.output_dir}")
+    
+    # Interactive search functionality
+    print("\n" + "="*60)
+    print("SEARCH FUNCTIONALITY")
+    print("="*60)
+    print("You can now search through all extracted files for keywords.")
+    print("Commands:")
+    print("  search <keyword1> <keyword2> ... - Search for keywords")
+    print("  search_case <keyword1> <keyword2> ... - Case-sensitive search")
+    print("  search_whole <keyword1> <keyword2> ... - Whole words only search")
+    print("  search_type <ext1,ext2> <keyword1> ... - Search specific file types (e.g., .pdf,.txt)")
+    print("  quit - Exit search mode")
+    
+    while True:
+        try:
+            user_input = input("\nEnter search command: ").strip()
+            
+            if not user_input or user_input.lower() == 'quit':
+                break
+            
+            parts = user_input.split()
+            if len(parts) < 2:
+                print("Please provide at least one keyword to search for.")
+                continue
+            
+            command = parts[0].lower()
+            
+            if command == 'search':
+                keywords = parts[1:]
+                results = analyzer.search_files(keywords)
+                analyzer.print_search_results(results)
+                
+            elif command == 'search_case':
+                keywords = parts[1:]
+                results = analyzer.search_files(keywords, case_sensitive=True)
+                analyzer.print_search_results(results)
+                
+            elif command == 'search_whole':
+                keywords = parts[1:]
+                results = analyzer.search_files(keywords, whole_words=True)
+                analyzer.print_search_results(results)
+                
+            elif command == 'search_type':
+                if len(parts) < 3:
+                    print("Usage: search_type <extensions> <keywords>")
+                    print("Example: search_type .pdf,.txt password username")
+                    continue
+                
+                file_types = [ext.strip() for ext in parts[1].split(',')]
+                keywords = parts[2:]
+                results = analyzer.search_files(keywords, file_types=file_types)
+                analyzer.print_search_results(results)
+                
+            else:
+                print("Unknown command. Use 'search', 'search_case', 'search_whole', 'search_type', or 'quit'")
+            
+            # Ask if user wants to save results
+            if 'results' in locals() and results['total_matches'] > 0:
+                save_choice = input("\nSave search results to file? (y/n): ").strip().lower()
+                if save_choice == 'y':
+                    analyzer.save_search_results(results)
+                    
+        except KeyboardInterrupt:
+            print("\nSearch interrupted by user.")
+            break
+        except Exception as e:
+            print(f"Error during search: {e}")
+    
+    print("Search session ended.")
+
+if __name__ == "__main__":
+    main()
